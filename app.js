@@ -248,6 +248,12 @@ function starteApp() {
       (dunkel ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln') + '" aria-label="' +
       (dunkel ? 'Heller Modus' : 'Dunkler Modus') + '">' + (dunkel ? sonne : mond) + '</button>';
   }
+  function themaNachpruefen() {
+    if (themaWahl() !== 'auto') return;
+    const vorher = document.documentElement.getAttribute('data-thema');
+    themaAnwenden();
+    if (document.documentElement.getAttribute('data-thema') !== vorher) render();
+  }
   function themaSetzen(wahl) {
     try { localStorage.setItem('schulplaner.thema', wahl); } catch (e) { }
     const html = document.documentElement;
@@ -409,6 +415,123 @@ function starteApp() {
     geaendert();
   }
 
+
+  /* ---------- Glas-Auswahlliste statt der Browser-Auswahl ---------- */
+  const GLAS_AUSWAHL = !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches &&
+                          HTMLElement.prototype.showPopover);
+  const PFEIL = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.2l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const HAKEN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.6 8.4l2.9 2.9 5.9-6.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  let offeneListe = null;
+
+  function farbeFuerOption(sel, wert) {
+    const id = sel.id;
+    if (id === 'fModul' || id === 'fltModul') {
+      if (!wert) return null;
+      if (wert === '__ohne__') return '#9A9AA2';
+      const m = modulVon(wert); return m ? m.farbe : null;
+    }
+    if (id === 'fPrio' || id === 'fltPrio') return PRIO_FARBE[wert] || null;
+    if (id === 'fStatus' || id === 'fltStatus') return STATUS_FARBE[wert] || null;
+    return null;
+  }
+  function punktHTML(farbe) {
+    return farbe ? '<span class="auswahl-punkt" style="background:' + farbe + '"></span>' : '';
+  }
+  function knopfBeschriften(sel) {
+    const knopf = sel.nextElementSibling;
+    if (!knopf || !knopf.classList.contains('auswahl-knopf')) return;
+    const opt = sel.options[sel.selectedIndex];
+    knopf.querySelector('.auswahl-text').innerHTML =
+      punktHTML(farbeFuerOption(sel, sel.value)) + '<span>' + esc(opt ? opt.text : '') + '</span>';
+  }
+  function listeSchliessen() {
+    if (offeneListe) { try { offeneListe.hidePopover(); } catch (e) { } }
+  }
+  function listeOeffnen(sel, knopf) {
+    listeSchliessen();
+    const liste = document.createElement('div');
+    liste.className = 'auswahl-liste';
+    liste.setAttribute('popover', 'auto');
+    liste.setAttribute('role', 'listbox');
+    liste.innerHTML = Array.from(sel.options).map(function (o, i) {
+      const aktiv = i === sel.selectedIndex;
+      return '<button type="button" class="auswahl-option' + (aktiv ? ' aktiv' : '') + '" role="option" aria-selected="' +
+        aktiv + '" data-index="' + i + '">' + punktHTML(farbeFuerOption(sel, o.value)) +
+        '<span class="auswahl-name">' + esc(o.text) + '</span>' + (aktiv ? HAKEN : '') + '</button>';
+    }).join('');
+    (sel.closest('dialog') || document.body).appendChild(liste);   // im offenen Dialog bleiben
+    liste.addEventListener('toggle', function (ev) {
+      if (ev.newState === 'closed') {
+        knopf.setAttribute('aria-expanded', 'false');
+        liste.remove();
+        if (offeneListe === liste) offeneListe = null;
+      }
+    });
+    liste.addEventListener('click', function (ev) {
+      const b = ev.target.closest('.auswahl-option');
+      if (!b) return;
+      sel.selectedIndex = Number(b.getAttribute('data-index'));
+      knopfBeschriften(sel);
+      listeSchliessen();
+      knopf.focus();
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    liste.addEventListener('keydown', function (ev) {
+      const knoepfe = Array.from(liste.querySelectorAll('.auswahl-option'));
+      const i = knoepfe.indexOf(document.activeElement);
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); knoepfe[Math.min(knoepfe.length - 1, i + 1)].focus(); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); knoepfe[Math.max(0, i - 1)].focus(); }
+      else if (ev.key === 'Home') { ev.preventDefault(); knoepfe[0].focus(); }
+      else if (ev.key === 'End') { ev.preventDefault(); knoepfe[knoepfe.length - 1].focus(); }
+      else if (ev.key === 'Tab') { listeSchliessen(); }
+    });
+    offeneListe = liste;
+    liste.showPopover();
+    knopf.setAttribute('aria-expanded', 'true');
+    // Position: unter dem Feld, bei Platzmangel darueber
+    const r = knopf.getBoundingClientRect();
+    liste.style.minWidth = r.width + 'px';
+    liste.style.left = Math.min(r.left, window.innerWidth - liste.offsetWidth - 8) + 'px';
+    const hoehe = liste.offsetHeight;
+    const unten = window.innerHeight - r.bottom - 10;
+    liste.style.top = (unten >= hoehe || unten >= r.top ? r.bottom + 6 : Math.max(8, r.top - hoehe - 6)) + 'px';
+    const aktiv = liste.querySelector('.auswahl-option.aktiv') || liste.querySelector('.auswahl-option');
+    if (aktiv) aktiv.focus();
+  }
+  function auswahlAufbereiten(wurzel) {
+    if (!GLAS_AUSWAHL || !wurzel) return;
+    wurzel.querySelectorAll('select').forEach(function (sel) {
+      if (sel.dataset.glas === '1') { knopfBeschriften(sel); return; }
+      sel.dataset.glas = '1';
+      sel.classList.add('auswahl-versteckt');
+      sel.tabIndex = -1;
+      const knopf = document.createElement('button');
+      knopf.type = 'button';
+      knopf.className = 'auswahl-knopf';
+      knopf.setAttribute('aria-haspopup', 'listbox');
+      knopf.setAttribute('aria-expanded', 'false');
+      if (sel.id) knopf.id = sel.id + '_glas';
+      const label = sel.id && document.querySelector('label[for="' + sel.id + '"]');
+      knopf.setAttribute('aria-label', label ? label.textContent : (sel.options[0] ? sel.options[0].text : 'Auswahl'));
+      knopf.innerHTML = '<span class="auswahl-text"></span>' + PFEIL;
+      sel.insertAdjacentElement('afterend', knopf);
+      knopf.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (offeneListe && knopf.getAttribute('aria-expanded') === 'true') listeSchliessen();
+        else listeOeffnen(sel, knopf);
+      });
+      knopf.addEventListener('keydown', function (ev) {
+        if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); listeOeffnen(sel, knopf); }
+      });
+      sel.addEventListener('focus', function () { knopf.focus(); });   // Klick aufs Label
+      knopfBeschriften(sel);
+    });
+  }
+  window.addEventListener('resize', listeSchliessen);
+  document.addEventListener('scroll', function (ev) {
+    if (offeneListe && !offeneListe.contains(ev.target)) listeSchliessen();
+  }, true);
+
   /* ---------- Formatierung ---------- */
   function langesDatum(iso) {
     const d = vonISO(iso);
@@ -493,6 +616,7 @@ function starteApp() {
       const s = $('#suchfeld');
       if (s) { s.value = filter.suche; }
     }
+    auswahlAufbereiten(c);
   }
 
   function htmlHeute() {
@@ -778,6 +902,7 @@ function starteApp() {
     $('#fNotiz').value = t ? (t.notizen || '') : '';
     $('#fLoeschen').style.display = t ? '' : 'none';
     zeichneUnteraufgaben();
+    auswahlAufbereiten($('#dlgAufgabe'));
     $('#dlgAufgabe').showModal();
     if (!t) setTimeout(function () { $('#fTitel').focus(); }, 50);
   }
@@ -1017,9 +1142,13 @@ function starteApp() {
     });
 
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden) { tageswechselPruefen(); synchronisiere(); }
+      if (!document.hidden) {
+        themaNachpruefen();                       // Systemwechsel im Hintergrund nachholen
+        tageswechselPruefen(); synchronisiere();
+      }
     });
     window.addEventListener('online', function () { synchronisiere(); });
+    window.addEventListener('focus', function () { themaNachpruefen(); });
   }
 
   function tageswechselPruefen() {
@@ -1038,7 +1167,7 @@ function starteApp() {
   render();
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();
-  setInterval(tageswechselPruefen, 20000);
+  setInterval(function () { tageswechselPruefen(); themaNachpruefen(); }, 20000);
   setInterval(function () { if (!document.hidden) synchronisiere(); }, 25000);
 
   if ('serviceWorker' in navigator) {
