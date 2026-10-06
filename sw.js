@@ -1,8 +1,8 @@
 /* Service Worker: holt bei Internet immer die neueste Version, offline die gespeicherte. */
-const CACHE = 'schulplaner-v3';
+const CACHE = 'schulplaner-v5';
 const DATEIEN = [
   './', './index.html', './app.js', './manifest.webmanifest',
-  './icon-192.png', './icon-512.png', './apple-touch-icon.png'
+  './icon-192.png', './icon-512.png', './icon-maskable-512.png', './favicon-64.png', './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', function (ev) {
