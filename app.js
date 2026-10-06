@@ -20,6 +20,7 @@ const WOCHENTAGE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', '
 const WT_KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+const ICON_PLUS = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" fill="none"/></svg>';
 const SCHLUESSEL_DATEN = 'schulplaner.daten';
 const SCHLUESSEL_CFG = 'schulplaner.config';
 const GRABSTEIN_TAGE = 60;
@@ -90,6 +91,36 @@ function aufraeumen(daten, heute) {
   }
   return { module: filter(daten.module), aufgaben: filter(daten.aufgaben) };
 }
+/* Gleichnamige Module zusammenfuehren: sonst entstehen beim ersten Abgleich
+   zweier Geraete doppelte Standardmodule und die Aufgaben haengen am falschen. */
+function vereinigeDoppelteModule(daten) {
+  const module = daten.module || [];
+  const aufgaben = daten.aufgaben || [];
+  const nachName = new Map();
+  for (const m of module) {
+    if (m.geloescht) continue;
+    const name = String(m.name || '').trim().toLowerCase();
+    if (!nachName.has(name)) nachName.set(name, []);
+    nachName.get(name).push(m);
+  }
+  const ersatz = new Map();
+  for (const gruppe of nachName.values()) {
+    if (gruppe.length < 2) continue;
+    gruppe.sort(function (a, b) { return String(a.id) < String(b.id) ? -1 : 1; });
+    const behalten = gruppe[0];
+    for (const doppelt of gruppe.slice(1)) {
+      ersatz.set(doppelt.id, behalten.id);
+      doppelt.geloescht = true;
+      doppelt.geaendert = jetztISO();
+    }
+  }
+  for (const t of aufgaben) {
+    const neu = ersatz.get(t.modul_id);
+    if (neu) { t.modul_id = neu; t.geaendert = jetztISO(); }
+  }
+  return { module: module, aufgaben: aufgaben };
+}
+
 function vergleichbar(daten) {
   function norm(liste) {
     return (liste || []).slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; })
@@ -137,6 +168,7 @@ if (typeof module !== 'undefined' && module.exports) {
     zusammenfuehren: zusammenfuehren, datenZusammenfuehren: datenZusammenfuehren,
     sortiere: sortiere, fortschritt: fortschritt, istUeberfaellig: istUeberfaellig,
     importAltdaten: importAltdaten, aufraeumen: aufraeumen, gleich: gleich,
+    vereinigeDoppelteModule: vereinigeDoppelteModule,
     aktiv: aktiv, datumISO: datumISO, tageDazu: tageDazu
   };
 } else {
@@ -230,7 +262,7 @@ function starteApp() {
     try {
       const fern = await fernLaden();
       const fernDaten = fern && fern.inhalt ? fern.inhalt : { module: [], aufgaben: [] };
-      const zusammen = aufraeumen(datenZusammenfuehren(daten, fernDaten), heute);
+      const zusammen = aufraeumen(vereinigeDoppelteModule(datenZusammenfuehren(daten, fernDaten)), heute);
       const lokalNeu = !gleich(zusammen, daten);
       const fernNeu = !gleich(zusammen, fernDaten);
       daten = zusammen;
@@ -285,9 +317,27 @@ function starteApp() {
   function statusWeiter(id) {
     const t = aufgabeVon(id);
     if (!t) return;
-    const i = STATI.indexOf(t.status);
-    t.status = STATI[(i + 1) % STATI.length];
-    if (t.status === 'Abgeschlossen') (t.unteraufgaben || []).forEach(function (s) { s.erledigt = true; });
+    if (istFertig(t)) {
+      t.status = STATI.indexOf(t.status_vorher) >= 0 && t.status_vorher !== 'Abgeschlossen'
+        ? t.status_vorher : STATI[0];
+    } else {
+      t.status_vorher = t.status;
+      t.status = 'Abgeschlossen';
+      (t.unteraufgaben || []).forEach(function (s) { s.erledigt = true; });
+    }
+    t.geaendert = jetztISO();
+    geaendert();
+  }
+  function unteraufgabeUmschalten(id, index) {
+    const t = aufgabeVon(id);
+    if (!t || !t.unteraufgaben || !t.unteraufgaben[index]) return;
+    const sub = t.unteraufgaben[index];
+    sub.erledigt = !sub.erledigt;
+    const alle = t.unteraufgaben.every(function (x) { return x.erledigt; });
+    const eine = t.unteraufgaben.some(function (x) { return x.erledigt; });
+    if (alle && !istFertig(t)) { t.status_vorher = t.status; t.status = 'Abgeschlossen'; }
+    else if (istFertig(t) && !alle) t.status = 'In Bearbeitung';
+    else if (t.status === STATI[0] && eine) t.status = 'In Bearbeitung';
     t.geaendert = jetztISO();
     geaendert();
   }
@@ -319,7 +369,7 @@ function starteApp() {
     const fp = fortschritt(t);
     const ueber = istUeberfaellig(t, heute);
     let knopf = '<button class="status-knopf" data-status="' + t.id + '" aria-label="Status ändern"></button>';
-    if (fertig) knopf = '<button class="status-knopf fertig" data-status="' + t.id + '">✓</button>';
+    if (fertig) knopf = '<button class="status-knopf fertig" data-status="' + t.id + '" aria-label="Wieder öffnen"></button>';
     else if (t.status === 'In Bearbeitung') knopf = '<button class="status-knopf arbeit" data-status="' + t.id + '"></button>';
 
     let meta = '';
@@ -337,8 +387,9 @@ function starteApp() {
       balken = '<div class="balken' + (fp.fertig === fp.gesamt ? ' voll' : '') + '"><i style="width:' + anteil + '%"></i></div>' +
         '<div class="balken-text">' + fp.fertig + '/' + fp.gesamt + ' Unteraufgaben</div>' +
         '<div class="unterliste">' +
-        (t.unteraufgaben || []).slice(0, 4).map(function (s) {
-          return '<div class="' + (s.erledigt ? 'ok' : '') + '">' + (s.erledigt ? '✓' : '○') + ' ' + esc(s.titel) + '</div>';
+        (t.unteraufgaben || []).slice(0, 4).map(function (s, i) {
+          return '<div class="sub' + (s.erledigt ? ' ok' : '') + '" data-sub-karte="' + t.id + '|' + i + '">' +
+            '<span class="sub-kreis"></span><span>' + esc(s.titel) + '</span></div>';
         }).join('') +
         ((t.unteraufgaben || []).length > 4 ? '<div style="color:var(--muted)">+ ' + ((t.unteraufgaben.length) - 4) + ' weitere</div>' : '') +
         '</div>';
@@ -362,6 +413,7 @@ function starteApp() {
     heute = heuteISO();
     $('#kopfDatum').textContent = langesDatum(heute);
     zeichneNav();
+    zeichneSeitenModule();
     zaehlerAktualisieren();
     setzeStatus(syncKlasse, syncText || (konfiguriert() ? 'Bereit' : 'Nur auf diesem Gerät'));
     const c = $('#content');
@@ -390,7 +442,7 @@ function starteApp() {
 
     let h = '<div class="seite"><div class="kopf"><div><h1>Heute</h1>' +
       '<div class="unter">' + esc(langesDatum(heute)) + '</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="heute">+ Neue Aufgabe</button></div></div>';
+      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="heute">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="stats">' +
       '<div class="stat blau"><b>' + heuteListe.length + '</b><span>Heute fällig</span></div>' +
       '<div class="stat rot"><b>' + ueber.length + '</b><span>Überfällig</span></div>' +
@@ -429,7 +481,7 @@ function starteApp() {
     const jahr = kalDatum.getFullYear(), monat = kalDatum.getMonth();
     let h = '<div class="seite"><div class="kopf"><div><h1>Kalender</h1>' +
       '<div class="unter">Überblick über alle Deadlines</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="gewaehlt">+ Neue Aufgabe</button></div></div>';
+      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="gewaehlt">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="kal-leiste"><button class="pfeil" data-monat="-1">‹</button>' +
       '<h2>' + MONATE[monat] + ' ' + jahr + '</h2>' +
       '<button class="pfeil" data-monat="1">›</button>' +
@@ -462,7 +514,7 @@ function starteApp() {
     const liste = sortiere(aufgabenAn(kalGewaehlt));
     h += '<div class="tagespanel"><div class="wt">' + WOCHENTAGE[(vonISO(kalGewaehlt).getDay() + 6) % 7] + '</div>' +
       '<h3>' + vonISO(kalGewaehlt).getDate() + '. ' + MONATE[vonISO(kalGewaehlt).getMonth()] + ' ' + vonISO(kalGewaehlt).getFullYear() + '</h3>' +
-      '<button class="btn btn-klein" style="margin:10px 0" data-neu="gewaehlt">+ Aufgabe für diesen Tag</button>' +
+      '<button class="btn btn-klein" style="margin:10px 0" data-neu="gewaehlt">' + ICON_PLUS + '<span>Aufgabe für diesen Tag</span></button>' +
       (liste.length ? listeHTML(liste, { datum: false }) : '<div class="leer">Keine Aufgaben an diesem Tag.</div>') +
       '</div>';
     return h + '</div>';
@@ -471,7 +523,7 @@ function starteApp() {
   function htmlModule() {
     let h = '<div class="seite"><div class="kopf"><div><h1>Module</h1>' +
       '<div class="unter">Wähle ein Fach, um die Aufgaben zu sehen</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-modul-neu="1">+ Neues Modul</button></div></div>';
+      '<div class="kopf-rechts"><button class="btn btn-primary" data-modul-neu="1">' + ICON_PLUS + '<span>Neues Modul</span></button></div></div>';
     h += '<div class="modul-gitter">';
     module().forEach(function (m) {
       const liste = aufgaben().filter(function (t) { return t.modul_id === m.id; });
@@ -514,7 +566,7 @@ function starteApp() {
       '<div class="kopf"><div><h1><span class="mod-punkt" style="width:12px;height:12px;background:' + farbe + '"></span> ' + esc(name) + '</h1>' +
       '<div class="unter">' + offen.length + ' offen · ' + fertig.length + ' erledigt</div></div><div class="kopf-rechts">' +
       (ohneModul ? '' : '<button class="btn" data-modul-bearbeiten="' + m.id + '">Bearbeiten</button>') +
-      '<button class="btn btn-primary" data-neu="modul">+ Neue Aufgabe</button></div></div>';
+      '<button class="btn btn-primary" data-neu="modul">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     if (ueber.length) h += abschnitt('Überfällig', ueber.length, 'rot') + listeHTML(ueber, { modul: false });
     h += abschnitt('Offene Aufgaben', rest.length);
     h += rest.length ? listeHTML(rest, { modul: false }) : '<div class="leer">Keine offenen Aufgaben in diesem Modul.</div>';
@@ -539,7 +591,7 @@ function starteApp() {
     liste = sortiere(liste);
     let h = '<div class="seite"><div class="kopf"><div><h1>Alle Aufgaben</h1>' +
       '<div class="unter">Suchen, filtern und sortieren</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="leer">+ Neue Aufgabe</button></div></div>';
+      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="leer">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="filter">' +
       '<input id="suchfeld" type="search" placeholder="Suche in Titel, Notizen, Unteraufgaben">' +
       '<select id="fltModul"><option value="">Alle Module</option>' +
@@ -602,7 +654,15 @@ function starteApp() {
       const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
         n.icon.split(' M').map(function (p, i) { return '<path d="' + (i ? 'M' + p : p) + '"/>'; }).join('') + '</svg>';
       return '<button class="nav-item' + (ansicht === n.id ? ' aktiv' : '') + '" data-ansicht="' + n.id + '">' +
-        svg + '<span class="lang">' + n.text + '</span></button>';
+        svg + '<span class="lang">' + n.text + '</span><span class="kurz">' + n.kurz + '</span></button>';
+    }).join('');
+  }
+  function zeichneSeitenModule() {
+    const ziel = $('#seitenModule');
+    if (!ziel) return;
+    ziel.innerHTML = module().map(function (m) {
+      return '<button class="seiten-modul" data-seite-modul="' + m.id + '">' +
+        '<span class="mod-punkt" style="background:' + m.farbe + '"></span>' + esc(m.name) + '</button>';
     }).join('');
   }
   function zaehlerAktualisieren() {
@@ -738,7 +798,7 @@ function starteApp() {
         const objekt = JSON.parse(String(leser.result));
         const neu = importAltdaten(objekt);
         if (!neu.aufgaben.length && !neu.module.length) { alert('In der Datei wurden keine Aufgaben gefunden.'); return; }
-        daten = datenZusammenfuehren(daten, neu);
+        daten = vereinigeDoppelteModule(datenZusammenfuehren(daten, neu));
         speichereLokal();
         alert(neu.aufgaben.length + ' Aufgabe(n) und ' + neu.module.length + ' Modul(e) übernommen.');
         planeSync();
@@ -758,6 +818,12 @@ function starteApp() {
       let el;
 
       if ((el = ziel('data-status'))) { ev.stopPropagation(); statusWeiter(el.getAttribute('data-status')); return; }
+      if ((el = ziel('data-sub-karte'))) {
+        ev.stopPropagation();
+        const teile = el.getAttribute('data-sub-karte').split('|');
+        unteraufgabeUmschalten(teile[0], Number(teile[1]));
+        return;
+      }
       if ((el = ziel('data-karte'))) { oeffneAufgabe(el.getAttribute('data-karte')); return; }
       if ((el = ziel('data-ansicht'))) { zeige(el.getAttribute('data-ansicht')); return; }
       if ((el = ziel('data-neu'))) {
@@ -780,6 +846,10 @@ function starteApp() {
         kalGewaehlt = iso;
         kalDatum = vonISO(iso);
         render(); return;
+      }
+      if ((el = ziel('data-seite-modul'))) {
+        ansicht = 'module'; modulOffen = el.getAttribute('data-seite-modul');
+        render(); $('#content').scrollTop = 0; return;
       }
       if ((el = ziel('data-modul'))) { modulOffen = el.getAttribute('data-modul'); render(); return; }
       if (ziel('data-zurueck')) { modulOffen = null; render(); return; }
