@@ -177,6 +177,35 @@ if (typeof module !== 'undefined' && module.exports) {
 
 function starteApp() {
 
+  /* Selbstpruefung: passen index.html und app.js zusammen?
+     (Neue app.js mit alter index.html sieht kaputt aus.) */
+  if (!document.querySelector('.tapete')) {
+    let schonVersucht = false;
+    try { schonVersucht = sessionStorage.getItem('schulplaner.neuladen') === '1'; } catch (e) { }
+    if (!schonVersucht) {
+      try { sessionStorage.setItem('schulplaner.neuladen', '1'); } catch (e) { }
+      const leeren = (typeof caches !== 'undefined')
+        ? caches.keys().then(function (k) { return Promise.all(k.map(function (n) { return caches.delete(n); })); })
+        : Promise.resolve();
+      leeren.then(function () {
+        if (navigator.serviceWorker) {
+          return navigator.serviceWorker.getRegistrations().then(function (r) {
+            return Promise.all(r.map(function (x) { return x.unregister(); }));
+          });
+        }
+      }).catch(function () { }).then(function () { location.reload(); });
+      return;
+    }
+    const hinweis = document.createElement('div');
+    hinweis.setAttribute('style', 'position:fixed;top:0;left:0;right:0;z-index:999;background:#FF3B30;color:#fff;' +
+      'font:600 14px/1.4 -apple-system,Segoe UI,sans-serif;padding:10px 16px;text-align:center');
+    hinweis.textContent = 'Die Datei index.html ist noch die alte Version. Bitte bei GitHub durch die neue ersetzen ' +
+      '(gleicher Name, ohne Zusatz wie „(1)") und die App danach neu öffnen.';
+    document.body.appendChild(hinweis);
+  } else {
+    try { sessionStorage.removeItem('schulplaner.neuladen'); } catch (e) { }
+  }
+
   let daten = { module: [], aufgaben: [] };
   let cfg = { url: '', key: '', code: '' };
   let ansicht = 'heute';
