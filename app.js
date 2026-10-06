@@ -224,6 +224,44 @@ function starteApp() {
     });
   };
 
+  /* ---------- Erscheinungsbild ---------- */
+  function themaWahl() {
+    try { return localStorage.getItem('schulplaner.thema') || 'auto'; } catch (e) { return 'auto'; }
+  }
+  function themaAnwenden() {
+    const wahl = themaWahl();
+    const system = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const dunkel = wahl === 'dunkel' || (wahl === 'auto' && system);
+    document.documentElement.setAttribute('data-thema', dunkel ? 'dunkel' : 'hell');
+    document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+      m.setAttribute('content', dunkel ? '#080915' : '#E9ECF5');      // Farbe der Titelleiste
+    });
+  }
+  function istDunkel() { return document.documentElement.getAttribute('data-thema') === 'dunkel'; }
+  function themaKnopf() {
+    const mond = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 14.6A8.6 8.6 0 0 1 9.4 3.6a8.6 8.6 0 1 0 11 11z" fill="currentColor"/></svg>';
+    const sonne = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="currentColor"/>' +
+      '<path d="M12 1.8v2.6M12 19.6v2.6M1.8 12h2.6M19.6 12h2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8" ' +
+      'stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    const dunkel = istDunkel();
+    return '<button class="btn thema-knopf" data-thema-umschalten="1" title="' +
+      (dunkel ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln') + '" aria-label="' +
+      (dunkel ? 'Heller Modus' : 'Dunkler Modus') + '">' + (dunkel ? sonne : mond) + '</button>';
+  }
+  function themaSetzen(wahl) {
+    try { localStorage.setItem('schulplaner.thema', wahl); } catch (e) { }
+    const html = document.documentElement;
+    html.classList.add('thema-wechsel');
+    themaAnwenden();
+    render();
+    setTimeout(function () { html.classList.remove('thema-wechsel'); }, 450);
+  }
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const neu = function () { if (themaWahl() === 'auto') themaAnwenden(); };
+    if (mq.addEventListener) mq.addEventListener('change', neu); else if (mq.addListener) mq.addListener(neu);
+  }
+
   /* ---------- Speicher ---------- */
   function ladeLokal() {
     try {
@@ -471,7 +509,7 @@ function starteApp() {
 
     let h = '<div class="seite"><div class="kopf"><div><h1>Heute</h1>' +
       '<div class="unter">' + esc(langesDatum(heute)) + '</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="heute">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-neu="heute">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="stats">' +
       '<div class="stat blau"><b>' + heuteListe.length + '</b><span>Heute fällig</span></div>' +
       '<div class="stat rot"><b>' + ueber.length + '</b><span>Überfällig</span></div>' +
@@ -510,7 +548,7 @@ function starteApp() {
     const jahr = kalDatum.getFullYear(), monat = kalDatum.getMonth();
     let h = '<div class="seite"><div class="kopf"><div><h1>Kalender</h1>' +
       '<div class="unter">Überblick über alle Deadlines</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="gewaehlt">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-neu="gewaehlt">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="kal-leiste"><button class="pfeil" data-monat="-1">‹</button>' +
       '<h2>' + MONATE[monat] + ' ' + jahr + '</h2>' +
       '<button class="pfeil" data-monat="1">›</button>' +
@@ -552,7 +590,7 @@ function starteApp() {
   function htmlModule() {
     let h = '<div class="seite"><div class="kopf"><div><h1>Module</h1>' +
       '<div class="unter">Wähle ein Fach, um die Aufgaben zu sehen</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-modul-neu="1">' + ICON_PLUS + '<span>Neues Modul</span></button></div></div>';
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-modul-neu="1">' + ICON_PLUS + '<span>Neues Modul</span></button></div></div>';
     h += '<div class="modul-gitter">';
     module().forEach(function (m) {
       const liste = aufgaben().filter(function (t) { return t.modul_id === m.id; });
@@ -593,7 +631,7 @@ function starteApp() {
 
     let h = '<div class="seite"><button class="zurueck" data-zurueck="1">‹ Zurück zu den Modulen</button>' +
       '<div class="kopf"><div><h1><span class="mod-punkt" style="width:12px;height:12px;background:' + farbe + '"></span> ' + esc(name) + '</h1>' +
-      '<div class="unter">' + offen.length + ' offen · ' + fertig.length + ' erledigt</div></div><div class="kopf-rechts">' +
+      '<div class="unter">' + offen.length + ' offen · ' + fertig.length + ' erledigt</div></div><div class="kopf-rechts">' + themaKnopf() +
       (ohneModul ? '' : '<button class="btn" data-modul-bearbeiten="' + m.id + '">Bearbeiten</button>') +
       '<button class="btn btn-primary" data-neu="modul">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     if (ueber.length) h += abschnitt('Überfällig', ueber.length, 'rot') + listeHTML(ueber, { modul: false });
@@ -620,7 +658,7 @@ function starteApp() {
     liste = sortiere(liste);
     let h = '<div class="seite"><div class="kopf"><div><h1>Alle Aufgaben</h1>' +
       '<div class="unter">Suchen, filtern und sortieren</div></div>' +
-      '<div class="kopf-rechts"><button class="btn btn-primary" data-neu="leer">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-neu="leer">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="filter">' +
       '<input id="suchfeld" type="search" placeholder="Suche in Titel, Notizen, Unteraufgaben">' +
       '<select id="fltModul"><option value="">Alle Module</option>' +
@@ -641,7 +679,8 @@ function starteApp() {
   function htmlEinstellungen() {
     const anzahl = aufgaben().length;
     let h = '<div class="seite"><div class="kopf"><div><h1>Einstellungen</h1>' +
-      '<div class="unter">Synchronisation und Daten</div></div></div>';
+      '<div class="unter">Synchronisation und Daten</div></div>' +
+      '<div class="kopf-rechts">' + themaKnopf() + '</div></div>';
 
     h += '<div class="box"><h3>Synchronisation</h3>' +
       '<p>Trage auf <b>jedem</b> Gerät dieselben drei Angaben ein. Danach gleichen sich iPad und PC automatisch ab.</p>' +
@@ -656,6 +695,13 @@ function starteApp() {
       '<button class="btn" data-code-neu="1">Neuen Code erzeugen</button>' +
       '<button class="btn" data-sync-jetzt="1">Jetzt synchronisieren</button></div>' +
       '<div class="hinweis ok" id="syncStatusSeite" style="margin-top:12px"></div></div>';
+
+    const wahl = themaWahl();
+    h += '<div class="box"><h3>Erscheinungsbild</h3>' +
+      '<p>„Automatisch" folgt dem Hell- oder Dunkelmodus deines Geräts.</p><div class="thema-wahl">' +
+      [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map(function (o) {
+        return '<button class="btn' + (wahl === o[0] ? ' aktiv' : '') + '" data-thema-wahl="' + o[0] + '">' + o[1] + '</button>';
+      }).join('') + '</div></div>';
 
     h += '<div class="box"><h3>Daten</h3><p>Aktuell ' + anzahl + (anzahl === 1 ? ' Aufgabe' : ' Aufgaben') +
       ' und ' + module().length + ' Module auf diesem Gerät.</p>' +
@@ -902,6 +948,8 @@ function starteApp() {
         $('#cfgCode').value = code;
         return;
       }
+      if ((el = ziel('data-thema-wahl'))) { themaSetzen(el.getAttribute('data-thema-wahl')); return; }
+      if (ziel('data-thema-umschalten')) { themaSetzen(istDunkel() ? 'hell' : 'dunkel'); return; }
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
       if (ziel('data-export')) { exportiere(); return; }
       if (ziel('data-import')) { $('#importDatei').click(); return; }
@@ -984,6 +1032,7 @@ function starteApp() {
   }
 
   /* ---------- Start ---------- */
+  themaAnwenden();
   ladeLokal();
   verdrahte();
   render();

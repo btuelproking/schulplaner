@@ -1,5 +1,5 @@
 /* Service Worker: holt bei Internet immer die neueste Version, offline die gespeicherte. */
-const CACHE = 'schulplaner-v2';
+const CACHE = 'schulplaner-v3';
 const DATEIEN = [
   './', './index.html', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'
