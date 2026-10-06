@@ -3,11 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E9ECF5">
+<meta name="theme-color" content="#E9ECF5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#05060C" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="SchulPlaner">
 <title>SchulPlaner</title>
+<script>
+(function () {
+  var wahl = 'auto';
+  try { wahl = localStorage.getItem('schulplaner.thema') || 'auto'; } catch (e) {}
+  var dunkel = wahl === 'dunkel' || (wahl === 'auto' && window.matchMedia &&
+               window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-thema', dunkel ? 'dunkel' : 'hell');
+})();
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
@@ -343,6 +353,129 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
 }
 @media (max-width:380px){ .modul-gitter{grid-template-columns:1fr} }
 @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+
+/* =========================================================
+   Dunkelmodus „Polarlicht“ – Rauchglas über Nachthimmel
+   ========================================================= */
+:root[data-thema="dunkel"]{
+  color-scheme:dark;
+  --text:#F2F2F7; --muted:#A4A4B0; --muted2:#787886;
+  --accent:#0A84FF; --accent-dunkel:#0060DF;
+  --danger:#FF453A; --done:#30D158; --warn:#FF9F0A;
+  --glas:rgba(24,26,46,.36); --glas-stark:rgba(32,35,60,.56); --glas-zart:rgba(16,18,34,.30);
+  --kante:rgba(255,255,255,.12);
+  --blur:blur(30px) saturate(190%);
+  --licht:inset 0 1px 0 rgba(255,255,255,.17), inset 0 0 0 1px rgba(255,255,255,.03);
+  --schatten:0 16px 42px rgba(0,0,0,.48), 0 1px 3px rgba(0,0,0,.45);
+  --glanz:linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,0) 52%);
+}
+:root[data-thema="dunkel"] body{background:#080915}
+:root[data-thema="dunkel"] .tapete{
+  background:
+    radial-gradient(1.2px 1.2px at 20px 30px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1px 1px at 120px 90px, rgba(255,255,255,.40), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 160px, rgba(255,255,255,.35), transparent 60%),
+    radial-gradient(1px 1px at 60px 200px, rgba(255,255,255,.30), transparent 60%),
+    #080915;
+  background-size:240px 240px,240px 240px,240px 240px,240px 240px,auto;
+}
+:root[data-thema="dunkel"] .tapete::before,
+:root[data-thema="dunkel"] .tapete::after{
+  content:"";position:absolute;inset:-12%;pointer-events:none;
+}
+:root[data-thema="dunkel"] .tapete::before{
+  background:
+    radial-gradient(40vmax 40vmax at 8% 12%,  rgba(56,104,255,.85), transparent 62%),
+    radial-gradient(44vmax 44vmax at 92% 8%,  rgba(150,72,255,.80), transparent 62%),
+    radial-gradient(38vmax 38vmax at 96% 92%, rgba(255,48,140,.62), transparent 62%),
+    radial-gradient(46vmax 46vmax at 6% 94%,  rgba(0,196,176,.66), transparent 62%),
+    radial-gradient(34vmax 34vmax at 42% 46%, rgba(70,90,255,.48), transparent 64%),
+    radial-gradient(30vmax 30vmax at 70% 64%, rgba(200,70,255,.40), transparent 64%);
+  animation:polarlicht 46s ease-in-out infinite alternate;
+}
+:root[data-thema="dunkel"] .tapete::after{
+  /* ein schmales Lichtband quer durchs Bild – das eigentliche Polarlicht */
+  background:linear-gradient(115deg, transparent 30%, rgba(80,255,210,.16) 43%, rgba(120,140,255,.20) 52%, transparent 66%);
+  filter:blur(30px);
+  animation:polarband 34s ease-in-out infinite alternate;
+}
+@keyframes polarlicht{
+  0%  {transform:translate3d(0,0,0) scale(1)}
+  50% {transform:translate3d(3%,-2%,0) scale(1.06)}
+  100%{transform:translate3d(-3%,2%,0) scale(1.02)}
+}
+@keyframes polarband{
+  0%  {transform:translate3d(-6%,4%,0) rotate(0deg)}
+  100%{transform:translate3d(6%,-4%,0) rotate(4deg)}
+}
+@media (prefers-reduced-motion: reduce){
+  :root[data-thema="dunkel"] .tapete::before,:root[data-thema="dunkel"] .tapete::after{animation:none}
+}
+
+/* Flächen, die im hellen Modus fest weiß getönt sind */
+:root[data-thema="dunkel"] #content{
+  background:rgba(14,16,30,.16);border-color:rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 24px 60px rgba(0,0,0,.45);
+}
+:root[data-thema="dunkel"] .nav-item:active,
+:root[data-thema="dunkel"] .seiten-modul:active{background:rgba(255,255,255,.07)}
+:root[data-thema="dunkel"] .nav-item.aktiv{
+  background:var(--glanz),rgba(255,255,255,.09);color:#4EA6FF;
+  box-shadow:var(--licht),0 4px 14px rgba(0,0,0,.25);
+}
+:root[data-thema="dunkel"] .btn-primary{
+  background:linear-gradient(180deg,#3B9BFF 0%,#0A84FF 55%,#006BE6 100%);
+  border-color:rgba(255,255,255,.22);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 22px rgba(10,132,255,.45);
+}
+:root[data-thema="dunkel"] .status-knopf:not(.fertig):not(.arbeit){border-color:#5E5E6C;background:rgba(255,255,255,.05)}
+:root[data-thema="dunkel"] .status-knopf.arbeit{border-color:var(--accent);background:linear-gradient(90deg,var(--accent) 50%,rgba(255,255,255,.05) 50%)}
+:root[data-thema="dunkel"] .status-knopf.fertig{box-shadow:0 0 14px rgba(48,209,88,.45)}
+:root[data-thema="dunkel"] .sub:not(.ok) .sub-kreis{border-color:#5E5E6C;background:rgba(255,255,255,.05)}
+:root[data-thema="dunkel"] .balken{background:rgba(255,255,255,.10)}
+:root[data-thema="dunkel"] .balken i{background:linear-gradient(90deg,#3B9BFF,#0A84FF);box-shadow:0 0 10px rgba(10,132,255,.55)}
+:root[data-thema="dunkel"] .balken.voll i{background:var(--done);box-shadow:0 0 10px rgba(48,209,88,.5)}
+:root[data-thema="dunkel"] .chip{background:color-mix(in srgb,currentColor 16%,transparent)}
+:root[data-thema="dunkel"] .stat.blau b{text-shadow:0 0 18px rgba(10,132,255,.45)}
+:root[data-thema="dunkel"] .stat.rot b{text-shadow:0 0 18px rgba(255,69,58,.40)}
+:root[data-thema="dunkel"] .stat.gruen b{text-shadow:0 0 18px rgba(48,209,88,.40)}
+:root[data-thema="dunkel"] .punkt.gruen{box-shadow:0 0 8px rgba(48,209,88,.7)}
+
+:root[data-thema="dunkel"] .kal .wt{border-bottom-color:rgba(255,255,255,.07)}
+:root[data-thema="dunkel"] .tag{border-right-color:rgba(255,255,255,.055);border-bottom-color:rgba(255,255,255,.055)}
+:root[data-thema="dunkel"] .tag.gewaehlt{background:rgba(10,132,255,.14);box-shadow:inset 0 0 0 1.5px rgba(10,132,255,.55)}
+:root[data-thema="dunkel"] .tag.heute .nr{box-shadow:0 0 16px rgba(10,132,255,.7)}
+:root[data-thema="dunkel"] .tag.fremd .nr,:root[data-thema="dunkel"] .tag.fremd .eintrag{opacity:.32}
+
+:root[data-thema="dunkel"] .filter input,:root[data-thema="dunkel"] .filter select,
+:root[data-thema="dunkel"] .feld input,:root[data-thema="dunkel"] .feld select,
+:root[data-thema="dunkel"] .feld textarea,:root[data-thema="dunkel"] .unter-neu input{
+  background:rgba(255,255,255,.06);box-shadow:inset 0 1px 2px rgba(0,0,0,.25);
+}
+:root[data-thema="dunkel"] .hinweis.ok{background:rgba(255,255,255,.06)}
+:root[data-thema="dunkel"] dialog{
+  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 40%),rgba(22,24,40,.80);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 30px 90px rgba(0,0,0,.6);
+}
+:root[data-thema="dunkel"] dialog::backdrop{background:rgba(0,0,0,.42)}
+:root[data-thema="dunkel"] .dlg-fuss{border-top-color:rgba(255,255,255,.08)}
+:root[data-thema="dunkel"] .unter-box{background:rgba(255,255,255,.04)}
+:root[data-thema="dunkel"] .unter-zeile input[type=checkbox]:not(:checked){border-color:#5E5E6C;background:rgba(255,255,255,.05)}
+@media (max-width:880px){
+  :root[data-thema="dunkel"] #sidebar{background:var(--glanz),rgba(24,26,44,.74)}
+  :root[data-thema="dunkel"] #content{background:transparent;box-shadow:none}
+}
+
+.thema-wahl{display:flex;gap:8px;flex-wrap:wrap}
+.thema-knopf{width:40px;height:40px;padding:0;flex:0 0 40px}
+.thema-knopf svg{width:19px;height:19px;flex:0 0 19px}
+:root[data-thema="hell"] .thema-knopf{color:#5A4FCF}
+:root[data-thema="dunkel"] .thema-knopf{color:#FFD60A}
+html.thema-wechsel *, html.thema-wechsel *::before, html.thema-wechsel *::after{
+  transition:background-color .4s ease,color .4s ease,border-color .4s ease,box-shadow .4s ease!important;
+}
+@media (max-width:560px){ .kopf-rechts{padding-top:2px} }
+.thema-wahl .btn.aktiv{color:var(--accent);box-shadow:var(--licht),0 0 0 2px rgba(10,132,255,.55)}
 </style>
 </head>
 <body>
