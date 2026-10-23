@@ -624,7 +624,8 @@ function starteApp() {
   function htmlNotizen() {
     return '<div class="seite"><div class="kopf"><div><h1>Notizbücher</h1>' +
       '<div class="unter">Mitschriften mit dem Apple Pencil – ein Notizbuch pro Fach</div></div>' +
-      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-nb-neu="">' + ICON_PLUS + '<span>Neues Notizbuch</span></button></div></div>' +
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn" data-nb-abgleich="1"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 00.6-7.95A6 6 0 006.6 9.1 4.7 4.7 0 007 18.5z"/><path d="M10 13.6l2-2 2 2M12 11.6v5"/></svg><span>Abgleichen</span></button>' +
+      '<button class="btn btn-primary" data-nb-neu="">' + ICON_PLUS + '<span>Neues Notizbuch</span></button></div></div>' +
       (window.Notizen ? '<div data-nb-bibliothek="1"></div>' : '<div class="hinweis fehler">Die Datei notizen.js fehlt – bitte mit hochladen.</div>') +
       '</div>';
   }
@@ -1189,7 +1190,7 @@ function starteApp() {
   if (window.Notizen) {
     try {
       window.Notizen.init({
-        module: module, modulVon: modulVon, auswahlAufbereiten: auswahlAufbereiten,
+        module: module, modulVon: modulVon, auswahlAufbereiten: auswahlAufbereiten, zeige: zeige,
         neuZeichnen: function () { if (ansicht === 'notizen' || ansicht === 'module' || ansicht === 'einstellungen') render(); }
       });
     } catch (e) { console.error(e); }
