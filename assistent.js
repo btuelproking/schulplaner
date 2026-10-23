@@ -497,7 +497,7 @@
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" type="button" data-ki-speichern>Speichern &amp; testen</button>' +
       (c.schluessel ? '<button class="btn" type="button" data-ki-entfernen>Schlüssel entfernen</button>' : '') + '</div>' +
       '<div class="hinweis ok" data-ki-status style="margin-top:12px">' + (c.schluessel ? 'Schlüssel ist eingetragen.' : 'Noch kein Schlüssel eingetragen.') + '</div>' +
-      '<p style="margin-top:12px;font-size:13px">Öffnen: runder Knopf mit dem Funken rechts unten' + (window.matchMedia && window.matchMedia('(pointer:fine)').matches ? ' oder Strg + K' : '') + '.</p>' +
+      '<p style="margin-top:12px;font-size:13px">Öffnen: Knopf mit dem Funken – am Laptop rechts unten, auf iPad und iPhone oben neben dem Mond' + (window.matchMedia && window.matchMedia('(pointer:fine)').matches ? ' oder Strg + K' : '') + '.</p>' +
       '<p style="margin-top:6px;font-size:13px">Hinweis: Im kostenlosen Gemini-Tarif darf Google deine Anfragen zur Verbesserung seiner Produkte verwenden. Schreib dem Assistenten also nichts Privates.</p></div>';
     if (K.auswahlAufbereiten) K.auswahlAufbereiten(ziel);
     const inp = ziel.querySelector('#kiSchluessel'), status = ziel.querySelector('[data-ki-status]');
@@ -595,8 +595,12 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-schluesselzeile{display:flex;gap:8px;align-items:center}
 .ki-schluesselzeile input{flex:1;min-width:0}
 html.nb-offen #kiKnopf,html.nb-offen #kiPanel{display:none}
+.btn.ki-kopf-start{display:none;width:40px;height:40px;flex:0 0 40px;padding:10px;color:#fff;border-color:rgba(255,255,255,.45);
+  background:linear-gradient(140deg,#8E6BFF,#3E7BFF 55%,#22B8E8);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 6px 16px rgba(80,90,230,.32)}
+.btn.ki-kopf-start svg{width:100%;height:100%;display:block}
 @media (max-width:880px){
-  #kiKnopf{right:18px;bottom:calc(156px + env(safe-area-inset-bottom));width:52px;height:52px;padding:13px}
+  #kiKnopf{display:none}
+  .btn.ki-kopf-start{display:inline-flex;align-items:center;justify-content:center}
   #kiPanel{left:0;right:0;top:0;bottom:0;width:auto;border-radius:0;border:0;transform:translateY(100%)}
   .ki-kopf{padding-top:calc(12px + env(safe-area-inset-top))}
 }
@@ -610,6 +614,9 @@ html.nb-offen #kiKnopf,html.nb-offen #kiPanel{display:none}
       const st = document.createElement('style'); st.id = 'ki-stil'; st.textContent = CSS; document.head.appendChild(st);
       verlaufLaden();
       bauen();
+      document.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('[data-ki-start]')) { e.preventDefault(); umschalten(true); }
+      });
       document.addEventListener('keydown', function (e) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           if (document.documentElement.classList.contains('nb-offen') || document.querySelector('dialog[open]')) return;
@@ -622,6 +629,7 @@ html.nb-offen #kiKnopf,html.nb-offen #kiPanel{display:none}
       if (z) einstellungenZeichnen(z);
     },
     oeffnen: function () { umschalten(true); },
+    kopfKnopf: function () { return '<button class="btn ki-kopf-start" data-ki-start="1" title="KI-Assistent" aria-label="KI-Assistent öffnen">' + FUNKE + '</button>'; },
     _intern: { senden: senden, werkzeugAusfuehren: werkzeugAusfuehren, get verlauf() { return verlauf; }, systemText: function () { return systemText(); } }
   };
 })();

@@ -3328,6 +3328,7 @@ dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
 .nb-wahl-knoepfe .btn{justify-content:center;width:100%}
 @media (max-width:760px){.nb-buchtitel{display:none}}
 @media (max-width:560px){
+  .kopf-rechts [data-nb-neu]{display:none}
   .nb-gitter{grid-template-columns:repeat(2,1fr);gap:22px 14px}
   .nb-knopf{width:38px;height:38px;flex-basis:38px}
   .nb-zeile:first-child{flex-wrap:wrap}
