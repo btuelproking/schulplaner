@@ -246,7 +246,8 @@ function starteApp() {
     const dunkel = istDunkel();
     return '<button class="btn thema-knopf" data-thema-umschalten="1" title="' +
       (dunkel ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln') + '" aria-label="' +
-      (dunkel ? 'Heller Modus' : 'Dunkler Modus') + '">' + (dunkel ? sonne : mond) + '</button>';
+      (dunkel ? 'Heller Modus' : 'Dunkler Modus') + '">' + (dunkel ? sonne : mond) + '</button>' +
+      (window.Assistent && window.Assistent.kopfKnopf ? window.Assistent.kopfKnopf() : '');
   }
   function themaNachpruefen() {
     if (themaWahl() !== 'auto') return;
