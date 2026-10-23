@@ -619,6 +619,7 @@ function starteApp() {
     }
     auswahlAufbereiten(c);
     if (window.Notizen) { try { window.Notizen.nachRender(c); } catch (e) { console.error(e); } }
+    if (window.Assistent) { try { window.Assistent.nachRender(c); } catch (e) { console.error(e); } }
   }
 
   function htmlNotizen() {
@@ -847,6 +848,7 @@ function starteApp() {
       '<input type="file" id="importDatei" accept=".json,application/json" style="display:none"></div>';
 
     if (window.Notizen) h += '<div data-nb-einstellungen="1"></div>';
+    if (window.Assistent) h += '<div data-ki-einstellungen="1"></div>';
 
     h += '<div class="box"><h3>Hinweis</h3><p>Alles wird sofort auf dem Gerät gespeichert und funktioniert auch ohne Internet. ' +
       'Sobald wieder Verbindung besteht, wird automatisch abgeglichen. Wird dieselbe Aufgabe auf beiden Geräten geändert, ' +
@@ -1192,6 +1194,20 @@ function starteApp() {
       window.Notizen.init({
         module: module, modulVon: modulVon, auswahlAufbereiten: auswahlAufbereiten, zeige: zeige,
         neuZeichnen: function () { if (ansicht === 'notizen' || ansicht === 'module' || ansicht === 'einstellungen') render(); }
+      });
+    } catch (e) { console.error(e); }
+  }
+  if (window.Assistent) {
+    try {
+      window.Assistent.init({
+        aufgaben: aufgaben, module: module, modulVon: modulVon, aufgabeVon: aufgabeVon,
+        speichereAufgabe: speichereAufgabe, loescheAufgabe: loescheAufgabe, uid: uid,
+        oeffneAufgabe: function (id) { oeffneAufgabe(id); }, auswahlAufbereiten: auswahlAufbereiten,
+        neuZeichnen: function () { if (ansicht === 'einstellungen') render(); },
+        modulAnlegen: function (name) {
+          const m = { id: uid(), name: name, farbe: MODUL_FARBEN[module().length % MODUL_FARBEN.length], geaendert: jetztISO(), geloescht: false };
+          daten.module.push(m); geaendert(); return m;
+        }
       });
     } catch (e) { console.error(e); }
   }
