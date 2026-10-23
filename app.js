@@ -611,12 +611,22 @@ function starteApp() {
     else if (ansicht === 'kalender') c.innerHTML = htmlKalender();
     else if (ansicht === 'module') c.innerHTML = modulOffen ? htmlModulDetail() : htmlModule();
     else if (ansicht === 'alle') c.innerHTML = htmlAlle();
+    else if (ansicht === 'notizen') c.innerHTML = htmlNotizen();
     else c.innerHTML = htmlEinstellungen();
     if (ansicht === 'alle') {
       const s = $('#suchfeld');
       if (s) { s.value = filter.suche; }
     }
     auswahlAufbereiten(c);
+    if (window.Notizen) { try { window.Notizen.nachRender(c); } catch (e) { console.error(e); } }
+  }
+
+  function htmlNotizen() {
+    return '<div class="seite"><div class="kopf"><div><h1>Notizbücher</h1>' +
+      '<div class="unter">Mitschriften mit dem Apple Pencil – ein Notizbuch pro Fach</div></div>' +
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-nb-neu="">' + ICON_PLUS + '<span>Neues Notizbuch</span></button></div></div>' +
+      (window.Notizen ? '<div data-nb-bibliothek="1"></div>' : '<div class="hinweis fehler">Die Datei notizen.js fehlt – bitte mit hochladen.</div>') +
+      '</div>';
   }
 
   function htmlHeute() {
@@ -758,6 +768,7 @@ function starteApp() {
       '<div class="unter">' + offen.length + ' offen · ' + fertig.length + ' erledigt</div></div><div class="kopf-rechts">' + themaKnopf() +
       (ohneModul ? '' : '<button class="btn" data-modul-bearbeiten="' + m.id + '">Bearbeiten</button>') +
       '<button class="btn btn-primary" data-neu="modul">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
+    if (window.Notizen) h += '<div data-nb-modul="' + (ohneModul ? '__ohne__' : esc(m.id)) + '"></div>';
     if (ueber.length) h += abschnitt('Überfällig', ueber.length, 'rot') + listeHTML(ueber, { modul: false });
     h += abschnitt('Offene Aufgaben', rest.length);
     h += rest.length ? listeHTML(rest, { modul: false }) : '<div class="leer">Keine offenen Aufgaben in diesem Modul.</div>';
@@ -834,6 +845,8 @@ function starteApp() {
       '<button class="btn" data-import="1">Datei einlesen (auch daten.json)</button></div>' +
       '<input type="file" id="importDatei" accept=".json,application/json" style="display:none"></div>';
 
+    if (window.Notizen) h += '<div data-nb-einstellungen="1"></div>';
+
     h += '<div class="box"><h3>Hinweis</h3><p>Alles wird sofort auf dem Gerät gespeichert und funktioniert auch ohne Internet. ' +
       'Sobald wieder Verbindung besteht, wird automatisch abgeglichen. Wird dieselbe Aufgabe auf beiden Geräten geändert, ' +
       'gewinnt die zuletzt gespeicherte Version.</p></div>';
@@ -846,6 +859,7 @@ function starteApp() {
     { id: 'kalender', text: 'Kalenderansicht', kurz: 'Kalender', icon: 'M3 5h18v16H3z M3 10h18 M8 3v4 M16 3v4' },
     { id: 'module', text: 'Modulansicht', kurz: 'Module', icon: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z' },
     { id: 'alle', text: 'Alle Aufgaben', kurz: 'Alle', icon: 'M4 6h16 M4 12h16 M4 18h16' },
+    { id: 'notizen', text: 'Notizbücher', kurz: 'Notizen', icon: 'M6 3h12a1 1 0 011 1v16a1 1 0 01-1 1H6z M6 3v18 M9.5 8h6 M9.5 11.5h6 M3.5 7h3 M3.5 12h3 M3.5 17h3' },
     { id: 'einstellungen', text: 'Einstellungen', kurz: 'Sync', icon: 'M12 8a4 4 0 100 8 4 4 0 000-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3' }
   ];
   function zeichneNav() {
@@ -1134,11 +1148,19 @@ function starteApp() {
     $('#mSpeichern').addEventListener('click', modulSpeichern);
     $('#mAbbrechen').addEventListener('click', function () { $('#dlgModul').close(); });
     $('#mLoeschen').addEventListener('click', modulLoeschen);
+    function neuKnopf() {
+      if (ansicht === 'notizen' && window.Notizen) { window.Notizen.neu(); return; }
+      oeffneAufgabe(null, { datum: ansicht === 'kalender' ? kalGewaehlt : heute });
+    }
     $('#neuBtnSeite').addEventListener('click', function () { oeffneAufgabe(null, { datum: ansicht === 'kalender' ? kalGewaehlt : heute }); });
-    $('#fabNeu').addEventListener('click', function () { oeffneAufgabe(null, { datum: ansicht === 'kalender' ? kalGewaehlt : heute }); });
+    $('#fabNeu').addEventListener('click', neuKnopf);
 
     document.addEventListener('keydown', function (e) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); oeffneAufgabe(null, { datum: heute }); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        if (window.Notizen && window.Notizen.offen()) return;
+        if (document.querySelector('dialog[open]')) return;
+        e.preventDefault(); neuKnopf();
+      }
     });
 
     document.addEventListener('visibilitychange', function () {
@@ -1164,6 +1186,14 @@ function starteApp() {
   themaAnwenden();
   ladeLokal();
   verdrahte();
+  if (window.Notizen) {
+    try {
+      window.Notizen.init({
+        module: module, modulVon: modulVon, auswahlAufbereiten: auswahlAufbereiten,
+        neuZeichnen: function () { if (ansicht === 'notizen' || ansicht === 'module' || ansicht === 'einstellungen') render(); }
+      });
+    } catch (e) { console.error(e); }
+  }
   render();
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();
