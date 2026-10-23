@@ -83,12 +83,13 @@
     if (!dbVersprechen) {
       dbVersprechen = new Promise(function (ok, fehler) {
         let r;
-        try { r = indexedDB.open('schulplaner-notizen', 1); } catch (e) { fehler(e); return; }
+        try { r = indexedDB.open('schulplaner-notizen', 2); } catch (e) { fehler(e); return; }
         r.onupgradeneeded = function () {
           const d = r.result;
           if (!d.objectStoreNames.contains('buecher')) d.createObjectStore('buecher', { keyPath: 'id' });
           if (!d.objectStoreNames.contains('seiten')) d.createObjectStore('seiten', { keyPath: 'id' }).createIndex('buch', 'buch');
           if (!d.objectStoreNames.contains('dateien')) d.createObjectStore('dateien', { keyPath: 'id' }).createIndex('buch', 'buch');
+          if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
         };
         r.onsuccess = function () {
           const d = r.result;
@@ -154,14 +155,14 @@
     return {
       id: uid(), buch: buch.id, b: o.b || SEITE_B, h: o.h || SEITE_H,
       v: o.v || buch.vorlage || 'liniert', papier: o.papier || buch.papier || 'weiss',
-      hg: o.hg || null, striche: [], texte: [], bilder: [], erstellt: jetzt()
+      hg: o.hg || null, striche: [], texte: [], bilder: [], erstellt: jetzt(), g: jetzt()
     };
   }
   async function buchAnlegen(daten) {
     const b = {
       id: uid(), titel: daten.titel || 'Notizbuch', modul_id: daten.modul_id || null,
       cover: daten.cover || 0, vorlage: daten.vorlage || 'liniert', papier: daten.papier || 'weiss',
-      seiten: [], anzahl: 0, erstellt: jetzt(), geaendert: jetzt(), zuletzt: null
+      seiten: [], anzahl: 0, erstellt: jetzt(), geaendert: jetzt(), metaG: jetzt(), weg: {}, zuletzt: null
     };
     const seiten = daten.seiten && daten.seiten.length ? daten.seiten.map(function (s) {
       return neueSeite(b, s);
@@ -192,7 +193,12 @@
     });
     return reihe;
   }
-  async function buchLoeschen(id) {
+  async function buchLoeschen(id, ohneMarke) {
+    if (!ohneMarke) {
+      const m = jsonLesen(LOESCH_KEY, {});
+      m[id] = jetzt();
+      jsonSchreiben(LOESCH_KEY, m);
+    }
     const seiten = await perIndex('seiten', id);
     const dateien = await perIndex('dateien', id);
     await transaktion(['buecher', 'seiten', 'dateien'], 'readwrite', function (s) {
@@ -909,7 +915,7 @@
       } else {
         const i = E.seiten.indexOf(a.seite);
         if (i >= 0) E.seiten.splice(i, 1);
-        E.weg.add(a.seite.id); E.dirty.delete(a.seite.id);
+        E.weg.add(a.seite.id); E.dirty.delete(a.seite.id); seiteWegMarke(a.seite.id);
       }
       layout(); kameraBegrenzen(); buchSchmutzig();
     } else if (a.typ === 'seite-meta') {
@@ -943,7 +949,8 @@
   }
 
   /* ---------- Speichern ---------- */
-  function schmutzig(seite) { E.dirty.add(seite.id); buchSchmutzig(); }
+  function schmutzig(seite) { seite.g = jetzt(); E.dirty.add(seite.id); buchSchmutzig(); }
+  function seiteWegMarke(id) { E.buch.weg = Object.assign({}, E.buch.weg || {}); E.buch.weg[id] = jetzt(); }
   function buchSchmutzig() {
     clearTimeout(E.speicherTimer);
     E.speicherTimer = setTimeout(function () { speichern(); }, 700);
@@ -957,7 +964,7 @@
     ed.dirty.clear(); ed.weg.clear();
     ed.buch.seiten = ed.seiten.map(function (s) { return s.id; });
     ed.buch.anzahl = ed.seiten.length;
-    ed.buch.geaendert = jetzt();
+    if (liste.length || weg.length) ed.buch.geaendert = jetzt();
     ed.buch.zuletzt = { seite: aktuelleSeite(), zoom: ed.zoom };
     try {
       await transaktion(['buecher', 'seiten'], 'readwrite', function (s) {
@@ -1651,7 +1658,7 @@
     textBeenden(); auswahlAufheben(true);
     const s = E.seiten[i];
     E.seiten.splice(i, 1);
-    E.weg.add(s.id); E.dirty.delete(s.id);
+    E.weg.add(s.id); E.dirty.delete(s.id); seiteWegMarke(s.id);
     aktionMerken({ typ: 'seite-weg', index: i, seite: s });
     layout(); kameraBegrenzen(); buchSchmutzig(); planeAlles();
     toast('Seite ' + (i + 1) + ' gelöscht', true);
@@ -2128,7 +2135,7 @@
     speichern();
   }
   async function oeffnen(id) {
-    if (E) return;
+    if (E || abgleichLaeuft) return;
     let buch = buecher.find(function (b) { return b.id === id; });
     if (!buch) buch = await holen('buecher', id).catch(function () { return null; });
     if (!buch) { alert('Dieses Notizbuch wurde nicht gefunden.'); return; }
@@ -2243,13 +2250,14 @@
     }
     if (!E) bilderFreigeben();
   }
-  function ergebnisZeigen(blob, name) {
+  function ergebnisZeigen(blob, name, hinweis) {
     const datei = typeof File === 'function' ? new File([blob], name, { type: blob.type }) : blob;
     const teilen = !!(navigator.canShare && navigator.share && (function () { try { return navigator.canShare({ files: [datei] }); } catch (e) { return false; } })());
     const ziel = E ? E.el.root : document.body;
     const ov = document.createElement('div');
     ov.className = 'nb-fortschritt';
     ov.innerHTML = '<div class="nb-fertig"><b>' + esc(name) + '</b><span>' + Math.max(1, Math.round(blob.size / 1024)) + ' KB</span>' +
+      (hinweis ? '<p class="nb-fertig-hinweis">' + esc(hinweis) + '</p>' : '') +
       '<div class="nb-fertig-knoepfe">' + (teilen ? '<button class="btn btn-primary" data-t="teilen">Teilen …</button>' : '') +
       '<button class="btn' + (teilen ? '' : ' btn-primary') + '" data-t="laden">Herunterladen</button>' +
       '<button class="btn" data-t="zu">Schließen</button></div></div>';
@@ -2366,6 +2374,7 @@
   async function sicherungErstellen() {
     const listen = await Promise.all([alle('buecher'), alle('seiten'), alle('dateien')]);
     const teile = ['{"format":"schulplaner-notizbuecher","version":1,"erstellt":' + JSON.stringify(new Date().toISOString()) +
+      ',"geloescht":' + JSON.stringify(loeschmarken()) +
       ',"buecher":' + JSON.stringify(listen[0]) + ',"seiten":' + JSON.stringify(listen[1]) + ',"dateien":['];
     for (let i = 0; i < listen[2].length; i++) {
       const d = listen[2][i];
@@ -2375,16 +2384,482 @@
     return new Blob(teile, { type: 'application/json' });
   }
   async function sicherungEinlesen(datei) {
-    const o = JSON.parse(await datei.text());
-    if (!o || o.format !== 'schulplaner-notizbuecher' || !Array.isArray(o.buecher)) throw new Error('Das ist keine Notizbuch-Sicherung.');
-    const dateien = (o.dateien || []).map(function (d) { return { id: d.id, buch: d.buch, blob: dataUrlZuBlob(d.daten) }; });
-    await transaktion(['buecher', 'seiten', 'dateien'], 'readwrite', function (s) {
-      o.buecher.forEach(function (b) { s.buecher.put(b); });
-      (o.seiten || []).forEach(function (x) { s.seiten.put(x); });
-      dateien.forEach(function (d) { s.dateien.put(d); });
+    return datenZusammenfuehren(JSON.parse(await datei.text()));
+  }
+
+  /* ============================================================
+     Abgleich zwischen Geräten (Google Drive oder Abgleich-Datei)
+     ============================================================ */
+  const LOESCH_KEY = 'schulplaner.notizen.geloescht', DRIVE_KEY = 'schulplaner.notizen.drive';
+  const DRIVE_API = 'https://www.googleapis.com/drive/v3', DRIVE_UP = 'https://www.googleapis.com/upload/drive/v3';
+  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  let abgleichLaeuft = false;
+
+  function jsonLesen(k, standard) {
+    try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v && typeof v === 'object' ? v : standard; } catch (e) { return standard; }
+  }
+  function jsonSchreiben(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+  function loeschmarken() { return jsonLesen(LOESCH_KEY, {}); }
+  function markenVereinen(a, b) {
+    const m = Object.assign({}, a || {});
+    Object.keys(b || {}).forEach(function (k) { if (typeof b[k] === 'number') m[k] = Math.max(m[k] || 0, b[k]); });
+    return m;
+  }
+  function markenText(m) { return JSON.stringify(Object.keys(m).sort().map(function (k) { return [k, m[k]]; })); }
+  function driveCfg() { return jsonLesen(DRIVE_KEY, {}); }
+  function driveCfgSetzen(c) { jsonSchreiben(DRIVE_KEY, c); }
+
+  function seitenZeit(s) { return s.g || s.erstellt || 0; }
+  function fingerabdruck(x) {
+    if (!x) return '';
+    const b = x.buch, weg = b.weg || {};
+    return JSON.stringify([b.titel, b.modul_id || null, b.cover, b.vorlage, b.papier, b.metaG || 0, x.seiten.map(function (s) { return s.id + ':' + seitenZeit(s); }),
+      Object.keys(weg).sort().map(function (k) { return k + ':' + weg[k]; })]);
+  }
+  /* Zwei Fassungen eines Notizbuchs vereinen: pro Seite gewinnt die zuletzt bearbeitete */
+  function zusammenfuehren(L, R) {
+    if (!L) return { buch: Object.assign({}, R.buch, { seiten: R.seiten.map(function (s) { return s.id; }), anzahl: R.seiten.length }), seiten: R.seiten };
+    if (!R) return L;
+    const lb = L.buch, rb = R.buch;
+    const weg = markenVereinen(rb.weg, lb.weg);
+    const seiten = new Map();
+    R.seiten.forEach(function (s) { seiten.set(s.id, s); });
+    L.seiten.forEach(function (s) { const r = seiten.get(s.id); if (!r || seitenZeit(s) >= seitenZeit(r)) seiten.set(s.id, s); });
+    Array.from(seiten.keys()).forEach(function (id) { if (weg[id] && weg[id] >= seitenZeit(seiten.get(id))) seiten.delete(id); });
+    const lokalNeuer = (lb.geaendert || 0) >= (rb.geaendert || 0);
+    const erste = lokalNeuer ? L.seiten.map(function (s) { return s.id; }) : (rb.seiten || R.seiten.map(function (s) { return s.id; }));
+    const zweite = lokalNeuer ? (rb.seiten || R.seiten.map(function (s) { return s.id; })) : L.seiten.map(function (s) { return s.id; });
+    const reihe = [];
+    erste.forEach(function (id) { if (seiten.has(id) && reihe.indexOf(id) < 0) reihe.push(id); });
+    zweite.forEach(function (id, i) {
+      if (!seiten.has(id) || reihe.indexOf(id) >= 0) return;
+      let pos = 0;
+      for (let k = i - 1; k >= 0; k--) { const p = reihe.indexOf(zweite[k]); if (p >= 0) { pos = p + 1; break; } }
+      reihe.splice(pos, 0, id);
     });
+    Array.from(seiten.values()).filter(function (s) { return reihe.indexOf(s.id) < 0; })
+      .sort(function (a, b) { return (a.erstellt || 0) - (b.erstellt || 0); }).forEach(function (s) { reihe.push(s.id); });
+    const meta = (lb.metaG || lb.erstellt || 0) >= (rb.metaG || rb.erstellt || 0) ? lb : rb;
+    const buch = Object.assign({}, lb, {
+      titel: meta.titel, modul_id: meta.modul_id || null, cover: meta.cover, vorlage: meta.vorlage, papier: meta.papier, metaG: meta.metaG || 0,
+      weg: weg, geaendert: Math.max(lb.geaendert || 0, rb.geaendert || 0), erstellt: Math.min(lb.erstellt || jetzt(), rb.erstellt || jetzt())
+    });
+    let liste = reihe.map(function (id) { return seiten.get(id); });
+    if (!liste.length) liste = [neueSeite(buch)];
+    buch.seiten = liste.map(function (s) { return s.id; });
+    buch.anzahl = liste.length;
+    return { buch: buch, seiten: liste };
+  }
+  async function buchLokalLaden(id) {
+    const b = buecher.find(function (x) { return x.id === id; }) || await holen('buecher', id);
+    if (!b) return null;
+    return { buch: b, seiten: await seitenLaden(b) };
+  }
+  async function buchLokalSchreiben(erg, alteIds) {
+    const neu = new Set(erg.seiten.map(function (s) { return s.id; }));
+    erg.seiten.forEach(function (s) { s.buch = erg.buch.id; });
+    await transaktion(['buecher', 'seiten'], 'readwrite', function (st) {
+      st.buecher.put(erg.buch);
+      erg.seiten.forEach(function (s) { st.seiten.put(s); });
+      (alteIds || []).forEach(function (id) { if (!neu.has(id)) st.seiten.delete(id); });
+    });
+    const i = buecher.findIndex(function (x) { return x.id === erg.buch.id; });
+    if (i >= 0) buecher[i] = erg.buch; else buecher.push(erg.buch);
+  }
+  function referenzierteDateien(erg) {
+    const ids = [];
+    erg.seiten.forEach(function (s) {
+      if (s.hg) ids.push(s.hg);
+      (s.bilder || []).forEach(function (b) { ids.push(b.d); });
+    });
+    return ids;
+  }
+  function dateiSchluessel() { return transaktion(['dateien'], 'readonly', function (s) { return s.dateien.getAllKeys(); }); }
+
+  /* gemeinsame Zusammenführung für Abgleich-Datei und Sicherung */
+  async function datenZusammenfuehren(o) {
+    if (!o || o.format !== 'schulplaner-notizbuecher' || !Array.isArray(o.buecher)) throw new Error('Das ist keine Notizbuch-Datei aus dem SchulPlaner.');
+    const marken = markenVereinen(loeschmarken(), o.geloescht);
+    jsonSchreiben(LOESCH_KEY, marken);
+    for (const id of Object.keys(marken)) if (buecher.some(function (b) { return b.id === id; })) await buchLoeschen(id, true);
+    const nachBuch = new Map();
+    (o.seiten || []).forEach(function (s) { if (!nachBuch.has(s.buch)) nachBuch.set(s.buch, []); nachBuch.get(s.buch).push(s); });
+    let neu = 0, aktualisiert = 0;
+    for (const rb of o.buecher) {
+      if (!rb || !rb.id || marken[rb.id]) continue;
+      const roh = nachBuch.get(rb.id) || [];
+      const reihe = (rb.seiten || []).map(function (id) { return roh.find(function (s) { return s.id === id; }); }).filter(Boolean);
+      roh.forEach(function (s) { if (reihe.indexOf(s) < 0) reihe.push(s); });
+      const R = { buch: rb, seiten: reihe };
+      const L = await buchLokalLaden(rb.id);
+      const erg = zusammenfuehren(L, R);
+      if (!L) { await buchLokalSchreiben(erg, []); neu++; }
+      else if (fingerabdruck(erg) !== fingerabdruck(L)) { await buchLokalSchreiben(erg, L.seiten.map(function (s) { return s.id; })); aktualisiert++; }
+    }
+    const vorhanden = new Set(await dateiSchluessel());
+    const fehlend = (o.dateien || []).filter(function (d) { return d && d.id && !vorhanden.has(d.id) && !marken[d.buch]; });
+    if (fehlend.length) {
+      const saetze = fehlend.map(function (d) { return { id: d.id, buch: d.buch, blob: dataUrlZuBlob(d.daten) }; });
+      await transaktion(['dateien'], 'readwrite', function (s) { saetze.forEach(function (d) { s.dateien.put(d); }); });
+    }
     await buecherLaden();
-    return o.buecher.length;
+    return { neu: neu, aktualisiert: aktualisiert };
+  }
+  function ergebnisText(r) {
+    const teile = [];
+    if (r.neu) teile.push(r.neu + (r.neu === 1 ? ' Notizbuch neu' : ' Notizbücher neu'));
+    if (r.aktualisiert) teile.push(r.aktualisiert + ' aktualisiert');
+    if (r.hoch) teile.push(r.hoch + ' hochgeladen');
+    return teile.length ? teile.join(', ') : 'alles war schon aktuell';
+  }
+
+  /* ---------- Google Drive ---------- */
+  let gisVersprechen = null, driveToken = null;
+  function gisLaden() {
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) return Promise.resolve();
+    if (!gisVersprechen) {
+      gisVersprechen = new Promise(function (ok, fehler) {
+        const s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client';
+        s.async = true;
+        s.onload = function () { ok(); };
+        s.onerror = function () { gisVersprechen = null; fehler(new Error('Google-Anmeldung konnte nicht geladen werden. Bist du online?')); };
+        document.head.appendChild(s);
+      });
+    }
+    return gisVersprechen;
+  }
+  function tokenGueltig() { return driveToken && driveToken.ablauf > Date.now() + 60000; }
+  /* muss direkt aus einem Tipp heraus aufgerufen werden, sonst blockt der Browser das Anmeldefenster */
+  function tokenAnfordern() {
+    const cfg = driveCfg();
+    return new Promise(function (ok, fehler) {
+      if (!(window.google && window.google.accounts && window.google.accounts.oauth2)) {
+        gisLaden().then(function () { fehler(new Error('Google-Anmeldung ist jetzt geladen – bitte nochmal auf „Abgleichen“ tippen.')); }, fehler);
+        return;
+      }
+      let fertig = false;
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: cfg.clientId,
+        scope: DRIVE_SCOPE,
+        callback: function (antwort) {
+          fertig = true;
+          if (!antwort || antwort.error || !antwort.access_token) { fehler(new Error('Anmeldung bei Google nicht erfolgt' + (antwort && antwort.error ? ' (' + antwort.error + ')' : '') + '.')); return; }
+          if (window.google.accounts.oauth2.hasGrantedAllScopes && !window.google.accounts.oauth2.hasGrantedAllScopes(antwort, DRIVE_SCOPE)) {
+            fehler(new Error('Bitte beim Anmelden den Zugriff auf Google Drive erlauben (Häkchen setzen).')); return;
+          }
+          driveToken = { wert: antwort.access_token, ablauf: Date.now() + (Number(antwort.expires_in) || 3600) * 1000 };
+          ok();
+        },
+        error_callback: function (f) {
+          if (fertig) return;
+          const typ = f && f.type;
+          if (typ === 'popup_failed_to_open') fehler(new Error('Das Anmeldefenster wurde blockiert. Bitte nochmal tippen – oder „Mit Datei abgleichen“ nutzen.'));
+          else if (typ === 'popup_closed') fehler(new Error('Anmeldung abgebrochen.'));
+          else fehler(new Error('Anmeldung bei Google fehlgeschlagen' + (typ ? ' (' + typ + ')' : '') + '.'));
+        }
+      });
+      const opt = { prompt: cfg.verbunden ? '' : 'consent' };
+      if (cfg.konto) opt.login_hint = cfg.konto;
+      client.requestAccessToken(opt);
+    });
+  }
+  function DriveFehler(text, status) { const e = new Error(text); e.status = status; return e; }
+  async function gfetch(url, opt) {
+    opt = opt || {};
+    const kopf = Object.assign({ Authorization: 'Bearer ' + driveToken.wert }, opt.headers || {});
+    let r;
+    try { r = await fetch(url, Object.assign({}, opt, { headers: kopf })); }
+    catch (e) { throw DriveFehler('Keine Verbindung zu Google Drive. Bist du online?', 0); }
+    if (r.status === 401) { driveToken = null; throw DriveFehler('Die Google-Anmeldung ist abgelaufen – bitte nochmal auf „Abgleichen“ tippen.', 401); }
+    if (!r.ok) {
+      let t = '';
+      try { const j = await r.json(); t = j && j.error && j.error.message ? j.error.message : ''; } catch (e) { }
+      if (r.status === 403 && /storage|quota/i.test(t)) throw DriveFehler('Dein Google-Drive-Speicher ist voll.', 403);
+      throw DriveFehler('Google Drive meldet einen Fehler (' + r.status + ')' + (t ? ': ' + t : ''), r.status);
+    }
+    return r;
+  }
+  function q(s) { return encodeURIComponent(s); }
+  async function driveListe(abfrage) {
+    let erg = [], seite = '';
+    do {
+      const r = await gfetch(DRIVE_API + '/files?q=' + q(abfrage) + '&spaces=drive&pageSize=1000&fields=' +
+        q('nextPageToken,files(id,name,modifiedTime,appProperties,size)') + (seite ? '&pageToken=' + q(seite) : ''));
+      const j = await r.json();
+      erg = erg.concat(j.files || []);
+      seite = j.nextPageToken || '';
+    } while (seite);
+    return erg;
+  }
+  async function driveHochladen(meta, blob, id) {
+    const art = blob.type || 'application/octet-stream';
+    if (blob.size > 4 * 1024 * 1024) {                               // große Dateien: fortsetzbares Hochladen
+      const r = await gfetch(DRIVE_UP + '/files' + (id ? '/' + id : '') + '?uploadType=resumable&fields=id,modifiedTime', {
+        method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': art }, body: JSON.stringify(meta)
+      });
+      const ort = r.headers.get('Location');
+      if (ort) {
+        const r2 = await gfetch(ort, { method: 'PUT', headers: { 'Content-Type': art }, body: blob });
+        return r2.json();
+      }
+    }
+    const grenze = 'schulplaner' + uid();
+    const koerper = new Blob(['--' + grenze + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
+      '\r\n--' + grenze + '\r\nContent-Type: ' + art + '\r\n\r\n', blob, '\r\n--' + grenze + '--\r\n']);
+    const r = await gfetch(DRIVE_UP + '/files' + (id ? '/' + id : '') + '?uploadType=multipart&fields=id,modifiedTime', {
+      method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + grenze }, body: koerper
+    });
+    return r.json();
+  }
+  async function driveLaden(id) { return (await gfetch(DRIVE_API + '/files/' + id + '?alt=media')).blob(); }
+  async function driveWeg(id) {
+    try { await gfetch(DRIVE_API + '/files/' + id + '?fields=id', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }); }
+    catch (e) { if (e.status !== 404) throw e; }
+  }
+  async function packen(obj) {
+    const text = JSON.stringify(obj);
+    if (typeof CompressionStream === 'function') {
+      const strom = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+      return new Blob([await new Response(strom).arrayBuffer()], { type: 'application/octet-stream' });
+    }
+    return new Blob([text], { type: 'application/octet-stream' });
+  }
+  async function entpacken(blob) {
+    const kopf = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+    if (kopf[0] === 0x1f && kopf[1] === 0x8b) {
+      if (typeof DecompressionStream !== 'function') throw new Error('Dieser Browser ist zu alt zum Entpacken – bitte iPadOS/Browser aktualisieren.');
+      return JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());
+    }
+    return JSON.parse(await blob.text());
+  }
+  function dateinameBuch(b) { return String(b.titel || 'Notizbuch').replace(/[\\/:*?"<>|]+/g, '-').trim().slice(0, 80) + '.schulplaner'; }
+  async function driveOrdner(cfg) {
+    if (cfg.ordner) {
+      try {
+        const r = await gfetch(DRIVE_API + '/files/' + cfg.ordner + '?fields=id,trashed');
+        const j = await r.json();
+        if (j && !j.trashed) return cfg.ordner;
+      } catch (e) { if (e.status !== 404) throw e; }
+    }
+    const gefunden = await driveListe("mimeType='application/vnd.google-apps.folder' and trashed=false and appProperties has { key='sp' and value='ordner' }");
+    if (gefunden.length) return gefunden[0].id;
+    const r = await gfetch(DRIVE_API + '/files?fields=id', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'SchulPlaner Notizbücher', mimeType: 'application/vnd.google-apps.folder', appProperties: { sp: 'ordner' } })
+    });
+    return (await r.json()).id;
+  }
+
+  async function driveAbgleichen() {
+    if (abgleichLaeuft) return;
+    if (E) { toast('Bitte zuerst das Notizbuch schließen.'); return; }
+    const cfg = driveCfg();
+    if (!cfg.clientId) { abgleichWahl(); return; }
+    abgleichLaeuft = true;
+    try {
+      if (!tokenGueltig()) await tokenAnfordern();
+      cfg.verbunden = true; driveCfgSetzen(cfg);
+      fortschritt('Verbinde mit Google Drive …');
+      const ordner = await driveOrdner(cfg);
+      cfg.ordner = ordner;
+      const dateien = await driveListe("'" + ordner + "' in parents and trashed=false");
+      const bRemote = new Map(), dRemote = new Map();
+      let markenDatei = null;
+      dateien.forEach(function (f) {
+        const a = f.appProperties || {};
+        if (a.sp === 'buch' && a.id) bRemote.set(a.id, f);
+        else if (a.sp === 'datei' && a.id) dRemote.set(a.id, f);
+        else if (a.sp === 'geloescht') markenDatei = f;
+      });
+      // Löschmarken abgleichen
+      let fern = {};
+      if (markenDatei) { try { fern = JSON.parse(await (await driveLaden(markenDatei.id)).text()) || {}; } catch (e) { fern = {}; } }
+      const marken = markenVereinen(loeschmarken(), fern);
+      jsonSchreiben(LOESCH_KEY, marken);
+      if (markenText(marken) !== markenText(fern)) {
+        await driveHochladen(markenDatei ? { name: 'geloeschte-notizbuecher.json' } : { name: 'geloeschte-notizbuecher.json', parents: [ordner], appProperties: { sp: 'geloescht' } },
+          new Blob([JSON.stringify(marken)], { type: 'application/json' }), markenDatei && markenDatei.id);
+      }
+      for (const id of Object.keys(marken)) {
+        if (buecher.some(function (b) { return b.id === id; })) await buchLoeschen(id, true);
+        if (bRemote.has(id)) { await driveWeg(bRemote.get(id).id); bRemote.delete(id); }
+        for (const [did, f] of Array.from(dRemote.entries())) if ((f.appProperties || {}).buch === id) { await driveWeg(f.id); dRemote.delete(did); }
+      }
+      // Notizbücher
+      await buecherLaden();
+      const ids = Array.from(new Set(buecher.map(function (b) { return b.id; }).concat(Array.from(bRemote.keys())))).filter(function (id) { return !marken[id]; });
+      const stand = cfg.stand || {};
+      const benoetigt = new Map();
+      const ergebnis = { neu: 0, aktualisiert: 0, hoch: 0 };
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        fortschritt('Gleiche ab … Notizbuch ' + (i + 1) + ' von ' + ids.length);
+        const lokal = buecher.find(function (b) { return b.id === id; });
+        const rf = bRemote.get(id), st = stand[id];
+        const fernGleich = !!(rf && st && st.mod === rf.modifiedTime);
+        const lokalGleich = !!(lokal && st && st.lokal === lokal.geaendert);
+        if (rf && lokal && fernGleich && lokalGleich) continue;
+        const L = lokal ? await buchLokalLaden(id) : null;
+        let R = null;
+        if (rf && !fernGleich) {
+          const o = await entpacken(await driveLaden(rf.id));
+          if (o && o.buch && Array.isArray(o.seiten)) R = { buch: o.buch, seiten: o.seiten };
+        }
+        const erg = R ? zusammenfuehren(L, R) : L;
+        if (!erg) continue;
+        if (!L) { await buchLokalSchreiben(erg, []); ergebnis.neu++; }
+        else if (R && fingerabdruck(erg) !== fingerabdruck(L)) { await buchLokalSchreiben(erg, L.seiten.map(function (s) { return s.id; })); ergebnis.aktualisiert++; }
+        let mod = rf ? rf.modifiedTime : null;
+        const fernVeraltet = !rf || (R ? fingerabdruck(erg) !== fingerabdruck(R) : !lokalGleich);
+        if (fernVeraltet) {
+          const blob = await packen({ format: 'schulplaner-notizbuch', version: 1, buch: erg.buch, seiten: erg.seiten });
+          const meta = { name: dateinameBuch(erg.buch), appProperties: { sp: 'buch', id: id } };
+          if (!rf) meta.parents = [ordner];
+          const res = await driveHochladen(meta, blob, rf && rf.id);
+          mod = res.modifiedTime; ergebnis.hoch++;
+        }
+        const gespeichert = buecher.find(function (b) { return b.id === id; });
+        stand[id] = { mod: mod, lokal: gespeichert ? gespeichert.geaendert : erg.buch.geaendert };
+        referenzierteDateien(erg).forEach(function (d) { benoetigt.set(d, id); });
+        cfg.stand = stand; driveCfgSetzen(cfg);                     // Fortschritt sichern, falls etwas abbricht
+      }
+      // PDF-Seiten und Bilder
+      if (benoetigt.size) {
+        const lokaleDateien = new Set(await dateiSchluessel());
+        let n = 0;
+        for (const [did, buchId] of benoetigt) {
+          n++;
+          if (!lokaleDateien.has(did) && dRemote.has(did)) {
+            fortschritt('Lade Seiten und Bilder … ' + n + ' von ' + benoetigt.size);
+            const blob = await driveLaden(dRemote.get(did).id);
+            await transaktion(['dateien'], 'readwrite', function (s) { s.dateien.put({ id: did, buch: buchId, blob: blob }); });
+          } else if (lokaleDateien.has(did) && !dRemote.has(did)) {
+            fortschritt('Lade Seiten und Bilder hoch … ' + n + ' von ' + benoetigt.size);
+            const d = await holen('dateien', did);
+            if (d && d.blob) {
+              await driveHochladen({ name: 'datei-' + did + (/png/.test(d.blob.type) ? '.png' : '.jpg'), parents: [ordner], appProperties: { sp: 'datei', id: did, buch: buchId } }, d.blob);
+            }
+          }
+        }
+      }
+      cfg.stand = stand; cfg.zuletzt = jetzt(); driveCfgSetzen(cfg);
+      await buecherLaden();
+      fortschritt(null);
+      toast('Mit Google Drive abgeglichen – ' + ergebnisText(ergebnis), false, 3800);
+    } catch (e) {
+      fortschritt(null);
+      alert(e && e.message ? e.message : String(e));
+    } finally {
+      abgleichLaeuft = false;
+      if (K) K.neuZeichnen();
+    }
+  }
+
+  /* ---------- Abgleich über eine Datei (Google Drive, OneDrive, iCloud …) ---------- */
+  function metaHolen(k) { return transaktion(['meta'], 'readonly', function (s) { return s.meta.get(k); }).then(function (r) { return r ? r.wert : null; }).catch(function () { return null; }); }
+  function metaSetzen(k, wert) { return transaktion(['meta'], 'readwrite', function (s) { if (wert == null) s.meta.delete(k); else s.meta.put({ id: k, wert: wert }); }); }
+  const DATEI_NAME = 'SchulPlaner-Notizbuecher.json';
+  const DATEI_TYPEN = [{ description: 'SchulPlaner-Abgleich', accept: { 'application/json': ['.json'] } }];
+  function kannDateiMerken() { return typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function'; }
+
+  function auswahlDialog(titel, text, knoepfe) {
+    return new Promise(function (ok) {
+      const d = document.createElement('dialog');
+      d.className = 'nb-wahl';
+      d.innerHTML = '<div class="dlg-koerper"><h3 class="nb-dlg-titel">' + esc(titel) + '</h3><p class="nb-wahl-text">' + text + '</p><div class="nb-wahl-knoepfe">' +
+        knoepfe.map(function (k, i) { return '<button type="button" class="btn' + (k.primaer ? ' btn-primary' : '') + '" data-i="' + i + '">' + esc(k.text) + '</button>'; }).join('') +
+        '</div></div>';
+      document.body.appendChild(d);
+      let wert = null;
+      d.addEventListener('click', function (e) {
+        const b = e.target.closest('[data-i]');
+        if (b) { wert = knoepfe[Number(b.getAttribute('data-i'))].wert; d.close(); }
+      });
+      d.addEventListener('close', function () { d.remove(); ok(wert); });
+      d.showModal();
+    });
+  }
+  async function abgleichWahl() {
+    const w = await auswahlDialog('Notizbücher abgleichen',
+      'Google Drive ist auf diesem Gerät noch nicht eingerichtet. Du kannst es in den Einstellungen einrichten oder stattdessen über eine Abgleich-Datei abgleichen (funktioniert mit Google Drive, OneDrive und iCloud über die Dateien-App).',
+      [{ text: 'Google Drive einrichten', wert: 'einrichten', primaer: true }, { text: 'Mit Datei abgleichen', wert: 'datei' }, { text: 'Abbrechen', wert: null }]);
+    if (w === 'einrichten' && K && K.zeige) { K.zeige('einstellungen'); setTimeout(function () { const f = document.getElementById('nbClientId'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } }, 80); }
+    else if (w === 'datei') dateiAbgleichen();
+  }
+  async function dateiAbgleichen(neuWaehlen) {
+    if (abgleichLaeuft) return;
+    if (E) { toast('Bitte zuerst das Notizbuch schließen.'); return; }
+    if (kannDateiMerken()) return dateiAbgleichenGemerkt(neuWaehlen);
+    const w = await auswahlDialog('Mit Datei abgleichen',
+      'Wähle deine Abgleich-Datei <b>' + DATEI_NAME + '</b> – zum Beispiel in der Dateien-App unter Google Drive oder OneDrive. Danach speicherst du den neuen Stand wieder an dieselbe Stelle.<br><br>Gibt es noch keine Datei, tippe auf „Erste Datei anlegen“.',
+      [{ text: 'Abgleich-Datei öffnen', wert: 'oeffnen', primaer: true }, { text: 'Erste Datei anlegen', wert: 'neu' }, { text: 'Abbrechen', wert: null }]);
+    if (w === 'oeffnen') {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json,application/json'; inp.className = 'nb-unsichtbar';
+      document.body.appendChild(inp);
+      inp.addEventListener('change', async function () {
+        const datei = inp.files && inp.files[0];
+        inp.remove();
+        if (!datei) return;
+        abgleichLaeuft = true;
+        try {
+          fortschritt('Gleiche ab …');
+          const r = await datenZusammenfuehren(await entpacken(datei));
+          fortschritt('Neuer Stand wird vorbereitet …');
+          const blob = await sicherungErstellen();
+          fortschritt(null);
+          toast('Eingelesen – ' + ergebnisText(r), false, 3500);
+          ergebnisZeigen(blob, DATEI_NAME, 'Jetzt den neuen Stand wieder an dieselbe Stelle speichern und die alte Datei ersetzen (Teilen → „In Dateien sichern“).');
+        } catch (e) { fortschritt(null); alert('Abgleich fehlgeschlagen: ' + (e && e.message ? e.message : e)); }
+        finally { abgleichLaeuft = false; if (K) K.neuZeichnen(); }
+      });
+      inp.click();
+    } else if (w === 'neu') {
+      fortschritt('Datei wird vorbereitet …');
+      try {
+        const blob = await sicherungErstellen();
+        fortschritt(null);
+        ergebnisZeigen(blob, DATEI_NAME, 'Speichere die Datei in deinem Cloud-Ordner (Teilen → „In Dateien sichern“ → Google Drive oder OneDrive). Auf den anderen Geräten wählst du dann genau diese Datei.');
+      } catch (e) { fortschritt(null); alert(e.message); }
+    }
+  }
+  async function dateiAbgleichenGemerkt(neuWaehlen) {
+    let h = neuWaehlen ? null : await metaHolen('abgleichDatei');
+    try {
+      if (h) {
+        let p = await h.queryPermission({ mode: 'readwrite' });
+        if (p !== 'granted') p = await h.requestPermission({ mode: 'readwrite' });
+        if (p !== 'granted') h = null;
+      }
+      if (!h) {
+        const w = await auswahlDialog('Mit Datei abgleichen',
+          'Wähle einmalig deine Abgleich-Datei <b>' + DATEI_NAME + '</b> in deinem Google-Drive- oder OneDrive-Ordner. Danach reicht ein Klick auf „Abgleichen“.',
+          [{ text: 'Vorhandene Datei wählen', wert: 'oeffnen', primaer: true }, { text: 'Neue Datei anlegen', wert: 'neu' }, { text: 'Abbrechen', wert: null }]);
+        if (w === 'oeffnen') h = (await window.showOpenFilePicker({ types: DATEI_TYPEN, multiple: false }))[0];
+        else if (w === 'neu') h = await window.showSaveFilePicker({ suggestedName: DATEI_NAME, types: DATEI_TYPEN });
+        else return;
+        try { await metaSetzen('abgleichDatei', h); } catch (e) { /* Merken nicht möglich – dann beim nächsten Mal neu wählen */ }
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      alert('Datei konnte nicht geöffnet werden: ' + (e && e.message ? e.message : e)); return;
+    }
+    abgleichLaeuft = true;
+    try {
+      fortschritt('Gleiche ab …');
+      const datei = await h.getFile();
+      let r = { neu: 0, aktualisiert: 0 };
+      if (datei.size > 0) r = await datenZusammenfuehren(await entpacken(datei));
+      fortschritt('Speichere neuen Stand …');
+      const blob = await sicherungErstellen();
+      const w = await h.createWritable();
+      await w.write(blob); await w.close();
+      const cfg = driveCfg(); cfg.dateiZuletzt = jetzt(); cfg.dateiName = h.name; driveCfgSetzen(cfg);
+      fortschritt(null);
+      toast('Mit „' + h.name + '“ abgeglichen – ' + ergebnisText(r), false, 3800);
+    } catch (e) { fortschritt(null); alert('Abgleich fehlgeschlagen: ' + (e && e.message ? e.message : e)); }
+    finally { abgleichLaeuft = false; if (K) K.neuZeichnen(); }
   }
 
   /* ============================================================
@@ -2441,7 +2916,9 @@
       if (filterModul === '__ohne__') return !(b.modul_id && K && K.modulVon(b.modul_id));
       return b.modul_id === filterModul;
     }));
-    el.innerHTML = '<div class="nb-filter">' + chips + '</div><div class="nb-gitter">' +
+    const cfgA = driveCfg();
+    el.innerHTML = '<div class="nb-filter">' + chips + '</div>' +
+      (cfgA.clientId ? '<div class="nb-stand">Zuletzt mit Google Drive abgeglichen: ' + zeitText(cfgA.zuletzt) + '</div>' : '') + '<div class="nb-gitter">' +
       '<div class="nb-buch nb-neu-karte" data-nb-neu="' + (filterModul !== 'alle' && filterModul !== '__ohne__' ? filterModul : '') + '"><div class="nb-cover"><span>+</span></div>' +
       '<div class="nb-info"><div class="nb-titel">Neues Notizbuch</div></div></div>' +
       liste.map(function (b) { return coverHTML(b); }).join('') + '</div>';
@@ -2462,11 +2939,24 @@
       liste.map(function (b) { return coverHTML(b, true); }).join('') +
       '<div class="nb-buch nb-klein nb-neu-karte" data-nb-neu="' + (ohne ? '' : modulId) + '"><div class="nb-cover"><span>+</span></div><div class="nb-info"><div class="nb-titel">Neu</div></div></div></div>';
   }
+  function zeitText(ms) { return ms ? datumText(ms) : 'noch nie'; }
   function einstellungenZeichnen(el) {
     const seiten = buecher.reduce(function (s, b) { return s + (b.anzahl || 1); }, 0);
+    const cfg = driveCfg();
     el.innerHTML = '<div class="box"><h3>Notizbücher</h3><p>' + buecher.length + (buecher.length === 1 ? ' Notizbuch' : ' Notizbücher') + ' mit ' + seiten +
-      (seiten === 1 ? ' Seite' : ' Seiten') + ' auf diesem Gerät. <span data-nb-speicher></span> Notizbücher werden nicht mit anderen Geräten abgeglichen – sichere sie hier regelmäßig.</p>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-nb-sichern="1">Notizbücher sichern</button>' +
+      (seiten === 1 ? ' Seite' : ' Seiten') + ' auf diesem Gerät. <span data-nb-speicher></span></p>' +
+      '<p>Notizbücher werden <b>nicht automatisch</b> abgeglichen. Tippe nach dem Mitschreiben auf „Mit Google Drive abgleichen“ – auch oben in der Notizbuch-Ansicht. ' +
+      'Pro Seite gewinnt die zuletzt bearbeitete Fassung.</p>' +
+      '<div class="feld"><label for="nbClientId">Google-Client-ID</label>' +
+      '<input id="nbClientId" type="text" autocomplete="off" spellcheck="false" placeholder="1234…apps.googleusercontent.com" value="' + esc(cfg.clientId || '') + '"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button class="btn btn-primary" data-nb-drive="1">Mit Google Drive abgleichen</button>' +
+      '<button class="btn" data-nb-dateiabgleich="1">Mit Datei abgleichen</button>' +
+      (kannDateiMerken() && cfg.dateiName ? '<button class="btn" data-nb-dateiwechsel="1">Andere Abgleich-Datei</button>' : '') +
+      (cfg.clientId ? '<button class="btn" data-nb-trennen="1">Google trennen</button>' : '') + '</div>' +
+      '<div class="hinweis ok" style="margin-top:12px">Google Drive: ' + (cfg.clientId ? 'zuletzt abgeglichen ' + zeitText(cfg.zuletzt) : 'noch nicht eingerichtet') +
+      (cfg.dateiZuletzt ? ' · Datei „' + esc(cfg.dateiName || '') + '“: ' + zeitText(cfg.dateiZuletzt) : '') + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="btn" data-nb-sichern="1">Sicherung herunterladen</button>' +
       '<button class="btn" data-nb-laden="1">Sicherung einlesen</button></div>' +
       '<input type="file" accept=".json,application/json" class="nb-unsichtbar" data-nb-sicherung></div>';
     if (navigator.storage && navigator.storage.estimate) {
@@ -2475,13 +2965,27 @@
         if (z && s && s.usage) z.textContent = 'Belegt: ' + (s.usage / 1048576).toFixed(1).replace('.', ',') + ' MB.';
       }).catch(function () { });
     }
+    const id = el.querySelector('#nbClientId');
+    id.addEventListener('change', function () {
+      const wert = id.value.trim();
+      const c = driveCfg();
+      if (wert && !/\.apps\.googleusercontent\.com$/.test(wert)) {
+        alert('Das sieht nicht wie eine Google-Client-ID aus. Sie endet auf „.apps.googleusercontent.com“.');
+        id.value = c.clientId || ''; return;
+      }
+      if (wert !== (c.clientId || '')) { c.clientId = wert; c.verbunden = false; driveToken = null; driveCfgSetzen(c); }
+      if (wert) gisLaden().catch(function () { });
+      if (K) K.neuZeichnen();
+    });
+    if (cfg.clientId) gisLaden().catch(function () { });
     const inp = el.querySelector('[data-nb-sicherung]');
     inp.addEventListener('change', async function () {
       const d = inp.files && inp.files[0];
       inp.value = '';
       if (!d) return;
-      try { const n = await sicherungEinlesen(d); alert(n + (n === 1 ? ' Notizbuch' : ' Notizbücher') + ' wiederhergestellt.'); }
+      try { const r = await sicherungEinlesen(d); alert('Sicherung eingelesen – ' + ergebnisText(r) + '.'); }
       catch (e) { alert('Sicherung konnte nicht eingelesen werden: ' + e.message); }
+      if (K) K.neuZeichnen();
     });
   }
 
@@ -2593,7 +3097,7 @@
     if (z.id) {
       const b = buecher.find(function (x) { return x.id === z.id; });
       if (b) {
-        b.titel = titel; b.modul_id = modul; b.cover = z.cover; b.geaendert = jetzt();
+        b.titel = titel; b.modul_id = modul; b.cover = z.cover; b.geaendert = jetzt(); b.metaG = jetzt();
         try { await buchSpeichern(b); } catch (e) { alert('Speichern fehlgeschlagen: ' + e.message); return; }
       }
       dlg.close();
@@ -2611,8 +3115,20 @@
 
   /* ---------- Klicks in der App ---------- */
   function appKlick(ev) {
-    const el = ev.target.closest && ev.target.closest('[data-nb-mehr],[data-nb-neu],[data-nb-oeffnen],[data-nb-filter],[data-nb-sichern],[data-nb-laden]');
+    const el = ev.target.closest && ev.target.closest('[data-nb-mehr],[data-nb-neu],[data-nb-oeffnen],[data-nb-filter],[data-nb-sichern],[data-nb-laden],[data-nb-abgleich],[data-nb-drive],[data-nb-dateiabgleich],[data-nb-dateiwechsel],[data-nb-trennen]');
     if (!el || (E && E.el.root.contains(el))) return;
+    if (el.hasAttribute('data-nb-abgleich') || el.hasAttribute('data-nb-drive')) {
+      const f = document.getElementById('nbClientId');
+      if (f && f.value.trim() !== (driveCfg().clientId || '')) { f.dispatchEvent(new Event('change')); }
+      driveAbgleichen(); return;
+    }
+    if (el.hasAttribute('data-nb-dateiabgleich')) { dateiAbgleichen(false); return; }
+    if (el.hasAttribute('data-nb-dateiwechsel')) { dateiAbgleichen(true); return; }
+    if (el.hasAttribute('data-nb-trennen')) {
+      if (!confirm('Google Drive auf diesem Gerät trennen? Deine Notizbücher bleiben auf dem Gerät und in Google Drive erhalten.')) return;
+      try { if (driveToken && window.google && window.google.accounts.oauth2.revoke) window.google.accounts.oauth2.revoke(driveToken.wert, function () { }); } catch (e) { }
+      driveToken = null; driveCfgSetzen({}); if (K) K.neuZeichnen(); return;
+    }
     if (el.hasAttribute('data-nb-mehr')) { ev.stopPropagation(); dialogOeffnen(el.getAttribute('data-nb-mehr')); return; }
     if (el.hasAttribute('data-nb-neu')) { dialogOeffnen(null, el.getAttribute('data-nb-neu') || null); return; }
     if (el.hasAttribute('data-nb-oeffnen')) { oeffnen(el.getAttribute('data-nb-oeffnen')); return; }
@@ -2803,6 +3319,13 @@ body>.nb-fortschritt{position:fixed;z-index:120}
 .nb-ueb-fuss button{border:0;background:transparent;color:var(--muted);width:28px;height:28px;border-radius:8px;padding:4px;cursor:pointer}
 .nb-ueb-fuss button:hover{color:var(--danger);background:rgba(255,59,48,.1)}
 .nb-ueb-fuss svg{width:18px;height:18px}
+.nb-stand{font-size:12.5px;color:var(--muted2);margin:10px 2px 0}
+.nb-fertig-hinweis{margin:4px 0 0;font-size:13.5px;line-height:1.45;max-width:340px;color:inherit;opacity:.85}
+dialog.nb-wahl{width:min(460px,94vw)!important;max-width:94vw!important;height:fit-content!important;min-height:0!important;max-height:90vh!important;border-radius:26px!important;border:1px solid var(--kante)!important;margin:auto!important}
+dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
+.nb-wahl-text{font-size:14.5px;line-height:1.5;color:var(--muted);margin:0 0 16px}
+.nb-wahl-knoepfe{display:flex;flex-direction:column;gap:8px;padding-bottom:14px}
+.nb-wahl-knoepfe .btn{justify-content:center;width:100%}
 @media (max-width:760px){.nb-buchtitel{display:none}}
 @media (max-width:560px){
   .nb-gitter{grid-template-columns:repeat(2,1fr);gap:22px 14px}
@@ -2850,7 +3373,9 @@ body>.nb-fortschritt{position:fixed;z-index:120}
       pdfBauen: pdfBauen, kritzelOpfer: kritzelOpfer, speichern: speichern, editorSchliessen: editorSchliessen,
       werkzeugWaehlen: werkzeugWaehlen, seiteHinzufuegen: seiteHinzufuegen, pdfInsBuch: pdfInsBuch, bildEinfuegen: bildEinfuegen,
       sicherungErstellen: sicherungErstellen, sicherungEinlesen: sicherungEinlesen, buchAusPdf: buchAusPdf, alle: alle,
-      zuSeite: zuSeite, skala: function () { return E ? skala() : 0; }
+      zuSeite: zuSeite, skala: function () { return E ? skala() : 0; },
+      driveAbgleichen: driveAbgleichen, dateiAbgleichen: dateiAbgleichen, datenZusammenfuehren: datenZusammenfuehren,
+      zusammenfuehren: zusammenfuehren, loeschmarken: loeschmarken, buchLoeschen: buchLoeschen, driveCfg: driveCfg
     }
   };
 })();
