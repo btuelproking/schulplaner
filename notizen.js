@@ -10,6 +10,8 @@
      Konstanten
      ============================================================ */
   const SEITE_B = 595, SEITE_H = 842;          // A4 in Punkt – passt 1:1 zum PDF
+  const FORMATE = { a4: [595, 842], a5: [420, 595] };
+  function formatGroesse(buch) { return FORMATE[buch && buch.format] || FORMATE.a4; }
   const LUECKE = 22, NEU_H = 96;                // Abstand zwischen Seiten, Kachel „Neue Seite“
   const LINIE = 22.7, KARO = 14.17;             // 8 mm Lineatur, 5 mm Karo
   const SCHRIFT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif';
@@ -36,7 +38,7 @@
     breite: { fueller: 1, kuli: 1, pinsel: 1, marker: 1, radierer: 1 },
     radierModus: 'praezise', markerGerade: false,
     textGroesse: 14, textFett: false,
-    finger: false, kritzeln: true
+    finger: false, kritzeln: true, formen: true, format: 'a4'
   };
   const W_SCHLUESSEL = 'schulplaner.notizen.werkzeug';
 
@@ -134,6 +136,13 @@
   let buecher = [];
   let geladen = false, ladeFehler = null;
   let filterModul = 'alle';
+  let ordnerOffen = null, suchText = '';
+  let bibModus = (function () { try { return localStorage.getItem('schulplaner.notizen.ansicht') === 'ordner' ? 'ordner' : 'faecher'; } catch (e) { return 'faecher'; } })();
+  function ordnerListe() {
+    const m = new Set();
+    buecher.forEach(function (b) { if (b.ordner) m.add(b.ordner); });
+    return Array.from(m).sort(function (a, b) { return a.localeCompare(b, 'de', { numeric: true }); });
+  }
 
   async function buecherLaden() {
     try {
@@ -153,15 +162,17 @@
   function neueSeite(buch, o) {
     o = o || {};
     return {
-      id: uid(), buch: buch.id, b: o.b || SEITE_B, h: o.h || SEITE_H,
+      id: uid(), buch: buch.id, b: o.b || formatGroesse(buch)[0], h: o.h || formatGroesse(buch)[1],
       v: o.v || buch.vorlage || 'liniert', papier: o.papier || buch.papier || 'weiss',
-      hg: o.hg || null, striche: [], texte: [], bilder: [], erstellt: jetzt(), g: jetzt()
+      hg: o.hg || null, striche: [], texte: [], bilder: [], erstellt: jetzt(), g: jetzt(),
+      pdfText: o.pdfText ? String(o.pdfText).slice(0, 30000) : undefined
     };
   }
   async function buchAnlegen(daten) {
     const b = {
       id: uid(), titel: daten.titel || 'Notizbuch', modul_id: daten.modul_id || null,
       cover: daten.cover || 0, vorlage: daten.vorlage || 'liniert', papier: daten.papier || 'weiss',
+      format: FORMATE[daten.format] ? daten.format : 'a4', ordner: String(daten.ordner || '').trim(),
       seiten: [], anzahl: 0, erstellt: jetzt(), geaendert: jetzt(), metaG: jetzt(), weg: {}, zuletzt: null
     };
     const seiten = daten.seiten && daten.seiten.length ? daten.seiten.map(function (s) {
@@ -660,6 +671,7 @@
     if (p.haupt) zeichneHaupt();
     if (p.live) zeichneLive();
     if (p.text || p.haupt) textSync();
+    if (p.haupt && E.lineal) linealSync();
     if (p.haupt) seitenzahlAktualisieren();
     if (E.traegheit) plane('haupt', 'live', 'text');
   }
@@ -782,6 +794,12 @@
       ctx.setTransform(d * s, 0, 0, d * s, d * ox, d * oy);
       const sicht = { x0: E.cam.x - r.x - 20, y0: E.cam.y - r.y - 20, x1: E.cam.x - r.x + E.vw / s + 20, y1: E.cam.y - r.y + E.vh / s + 20 };
       zeichneSeite(ctx, seite, d * s, { versteckt: E.versteckt, sicht: sicht });
+      if (seite.lz) {
+        ctx.setTransform(d, 0, 0, d, 0, 0);
+        const bx = ox + r.b * s - 38, bh = 30;
+        ctx.beginPath(); ctx.moveTo(bx, oy); ctx.lineTo(bx + 18, oy); ctx.lineTo(bx + 18, oy + bh); ctx.lineTo(bx + 9, oy + bh - 7); ctx.lineTo(bx, oy + bh); ctx.closePath();
+        ctx.fillStyle = '#FF3B30'; ctx.fill();
+      }
     }
     const k = kachelRahmen();
     if (k.y <= y1 && k.y + k.h >= y0) {
@@ -822,7 +840,8 @@
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, seite.b, seite.h); ctx.clip();
       let p;
       const r = st.roh, n = r.length;
-      if (st.gerade) p = [r[0], r[1], r[2], r[n - 3], r[n - 2], r[n - 1]];
+      if (st.form) p = st.form;
+      else if (st.gerade) p = [r[0], r[1], r[2], r[n - 3], r[n - 2], r[n - 1]];
       else p = st.glatt.concat([r[n - 3], r[n - 2], r[n - 1]]);
       if (st.wz === 'marker') {
         ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = st.f; ctx.lineWidth = st.b;
@@ -918,6 +937,8 @@
         E.weg.add(a.seite.id); E.dirty.delete(a.seite.id); seiteWegMarke(a.seite.id);
       }
       layout(); kameraBegrenzen(); buchSchmutzig();
+    } else if (a.typ === 'seite-ordnung') {
+      seitenOrdnen(rueck ? a.vorher : a.nachher);
     } else if (a.typ === 'seite-meta') {
       const seite = seiteNachId(a.id);
       if (!seite) return;
@@ -964,7 +985,7 @@
     ed.dirty.clear(); ed.weg.clear();
     ed.buch.seiten = ed.seiten.map(function (s) { return s.id; });
     ed.buch.anzahl = ed.seiten.length;
-    if (liste.length || weg.length) ed.buch.geaendert = jetzt();
+    if (liste.length || weg.length || ed.buchGeaendert) { ed.buch.geaendert = jetzt(); ed.buchGeaendert = false; }
     ed.buch.zuletzt = { seite: aktuelleSeite(), zoom: ed.zoom };
     try {
       await transaktion(['buecher', 'seiten'], 'readwrite', function (s) {
@@ -1002,6 +1023,7 @@
     popoverSchliessen();
     const pt = punktAus(e);
     if (e.pointerType === 'touch') {
+      if (linealTouchStart(e, pt)) return;
       if (E.zeiger !== null && E.zeigerTyp === 'pen') return;                // Handballen ignorieren
       if (E.zeiger !== null && E.zeigerTyp === 'touch') {                    // zweiter Finger beim Fingerschreiben
         const ersterAlt = E.strich && (E.strich.roh.length < 24 || performance.now() - E.strich.t0 < 250);
@@ -1033,6 +1055,7 @@
       return;
     }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === 'mouse' && E.lineal && E.zeiger === null && !linealKante(pt) && imLineal(pt)) { linealTouchStart(e, pt, true); return; }
     if (E.zeiger !== null) return;
     if (e.pointerType === 'pen') {                                             // Stift hat Vorrang
       E.stiftGesehen = true;
@@ -1055,10 +1078,11 @@
     if (W.wz === 'text') { E.textTipp = { pt: pt }; return; }
     if (W.wz === 'lasso') { lassoStart(w); return; }
     if (W.wz === 'radierer') { radiererStart(pt, w); return; }
-    strichStart(w, e);
+    strichStart(w, e, pt);
   }
   function aufMove(e) {
     if (!E) return;
+    if (E.linealZug && E.linealZug.touches.has(e.pointerId)) { linealTouchMove(e); return; }
     if (E.mausPan) { const pt = punktAus(e); verschieben(pt.x - E.mausPan.x, pt.y - E.mausPan.y); E.mausPan = pt; return; }
     if (e.pointerId === E.zeiger) {
       const evs = teilEvents(e);
@@ -1078,6 +1102,7 @@
   }
   function aufUp(e) {
     if (!E) return;
+    if (E.linealZug && E.linealZug.touches.has(e.pointerId)) { linealTouchEnde(e); return; }
     if (E.mausPan && e.pointerType === 'mouse') { E.mausPan = null; return; }
     if (e.pointerId === E.zeiger) {
       const pt = punktAus(e);
@@ -1173,7 +1198,9 @@
   }
 
   /* ---------- Stifte und Textmarker ---------- */
-  function strichStart(w, e) {
+  function strichStart(w, e, pt) {
+    const kante = pt && E.lineal ? linealKante(pt) : null;
+    if (kante) { const q = aufKante(E.lineal, kante, pt); w = welt(q.x, q.y); }
     const i = seiteBei(w.x, w.y);
     if (i < 0) return;
     const r = E.pos[i], x = w.x - r.x, y = w.y - r.y, d = druck(e);
@@ -1181,14 +1208,34 @@
     E.strich = {
       i: i, wz: wz, f: wz === 'marker' ? W.markerFarben[W.markerFarbe] : W.stiftFarben[W.stiftFarbe],
       b: aktuelleBreite(wz), roh: [x, y, d], glatt: [x, y, d], t0: performance.now(),
-      gerade: wz === 'marker' && W.markerGerade
+      gerade: wz === 'marker' && W.markerGerade && !kante, kante: kante, halt: pt ? { x: pt.x, y: pt.y } : null
     };
+    haltenPlanen();
     plane('live');
   }
+  function haltenPlanen() {
+    clearTimeout(E.haltTimer);
+    if (!W.formen || !E.strich || E.strich.kante || E.strich.gerade || E.strich.form) return;
+    E.haltTimer = setTimeout(formPruefen, 550);
+  }
+  function formPruefen() {
+    const st = E && E.strich;
+    if (!st || st.form || st.kante) return;
+    const f = formErkennen(st.roh, skala());
+    if (!f) return;
+    st.form = f.punkte; st.formArt = f.art;
+    plane('live');
+    if (navigator.vibrate) { try { navigator.vibrate(8); } catch (x) { } }
+  }
   function strichPunkt(ev) {
-    const st = E.strich, pt = punktAus(ev), w = welt(pt.x, pt.y), r = E.pos[st.i];
+    const st = E.strich;
+    if (st.form) return;                                                        // Form steht – Stift kann losgelassen werden
+    let pt = punktAus(ev);
+    if (st.kante && E.lineal) pt = aufKante(E.lineal, st.kante, pt);
+    const w = welt(pt.x, pt.y), r = E.pos[st.i];
     const x = w.x - r.x, y = w.y - r.y, d = druck(ev);
     const n = st.roh.length;
+    if (st.halt && Math.hypot(pt.x - st.halt.x, pt.y - st.halt.y) > 4) { st.halt = { x: pt.x, y: pt.y }; haltenPlanen(); }
     if (Math.hypot(x - st.roh[n - 3], y - st.roh[n - 2]) < 0.5 / skala()) { st.roh[n - 1] = d; return; }
     st.roh.push(x, y, d);
     const g = st.glatt, m = g.length, a = E.zeigerTyp === 'pen' ? 0.62 : 0.45;
@@ -1197,12 +1244,13 @@
   function strichEnde() {
     const st = E.strich;
     E.strich = null;
+    clearTimeout(E.haltTimer);
     if (!st) return;
     const seite = E.seiten[st.i], r = st.roh, n = r.length;
-    let p = st.gerade ? [r[0], r[1], r[2], r[n - 3], r[n - 2], r[n - 1]] : st.glatt.concat([r[n - 3], r[n - 2], r[n - 1]]);
+    let p = st.form ? st.form : st.gerade ? [r[0], r[1], r[2], r[n - 3], r[n - 2], r[n - 1]] : st.glatt.concat([r[n - 3], r[n - 2], r[n - 1]]);
     p = neuAbtasten(p, 2);
     const strich = { id: uid(), w: st.wz, f: st.f, b: st.b, p: p };
-    const opfer = st.gerade ? null : kritzelOpfer(seite, strich, st.roh);
+    const opfer = st.gerade || st.form || st.kante ? null : kritzelOpfer(seite, strich, st.roh);
     aendern(seite, function () {
       if (opfer) {
         const weg = new Set(opfer);
@@ -1211,6 +1259,206 @@
     });
     if (opfer) toast(opfer.length === 1 ? 'Durchgekritzelt – gelöscht' : 'Durchgekritzelt – ' + opfer.length + ' Striche gelöscht', true);
     planeAlles();
+  }
+
+  /* ---------- Formen erkennen (Stift am Ende kurz halten) ---------- */
+  function rdp(pts, eps) {                                     // Ramer-Douglas-Peucker
+    if (pts.length < 3) return pts.slice();
+    let maxD = 0, idx = 0;
+    const a = pts[0], b = pts[pts.length - 1];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = abstandStrecke(pts[i], a, b);
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD <= eps) return [a, b];
+    const l = rdp(pts.slice(0, idx + 1), eps), r = rdp(pts.slice(idx), eps);
+    return l.slice(0, -1).concat(r);
+  }
+  function abstandStrecke(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    if (!l2) return Math.hypot(p.x - a.x, p.y - a.y);
+    const t = grenze(((p.x - a.x) * dx + (p.y - a.y) * dy) / l2, 0, 1);
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+  }
+  function winkelEinrasten(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy);
+    let w = Math.atan2(dy, dx);
+    const raster = Math.round(w / (Math.PI / 4)) * (Math.PI / 4);
+    if (Math.abs(w - raster) < 4 * Math.PI / 180) w = raster;
+    return { x: a.x + Math.cos(w) * l, y: a.y + Math.sin(w) * l };
+  }
+  function formErkennen(roh, s) {
+    const pts = [];
+    let druckSumme = 0;
+    for (let i = 0; i < roh.length; i += 3) {
+      const q = { x: roh[i], y: roh[i + 1] };
+      if (!pts.length || Math.hypot(q.x - pts[pts.length - 1].x, q.y - pts[pts.length - 1].y) > 0.3) pts.push(q);
+      druckSumme += roh[i + 2];
+    }
+    if (pts.length < 4) return null;
+    const druckM = grenze(druckSumme / (roh.length / 3), 0.25, 0.9);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, L = 0;
+    pts.forEach(function (q, i) {
+      x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+      if (i) L += Math.hypot(q.x - pts[i - 1].x, q.y - pts[i - 1].y);
+    });
+    const diag = Math.hypot(x1 - x0, y1 - y0);
+    if (diag * s < 24) return null;
+    const flach = function (liste) { const out = []; liste.forEach(function (q) { out.push(r2(q.x), r2(q.y), druckM); }); return out; };
+    const a = pts[0], b = pts[pts.length - 1], sehne = Math.hypot(b.x - a.x, b.y - a.y);
+    // gerade Linie
+    if (sehne / L > 0.55) {
+      let maxD = 0;
+      pts.forEach(function (q) { maxD = Math.max(maxD, abstandStrecke(q, a, b)); });
+      if (maxD < Math.max(4 / s, sehne * 0.06)) return { art: 'linie', punkte: flach([a, winkelEinrasten(a, b)]) };
+    }
+    const geschlossen = sehne < Math.max(0.2 * diag, 10 / s) && L > 2.2 * diag * 0.9;
+    if (geschlossen) {
+      // Ellipse oder Kreis (achsenparallel)
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = Math.max(1, (x1 - x0) / 2), ry = Math.max(1, (y1 - y0) / 2);
+      let fehler = 0;
+      pts.forEach(function (q) { fehler += Math.abs(Math.hypot((q.x - cx) / rx, (q.y - cy) / ry) - 1); });
+      fehler /= pts.length;
+      const ecken = rdp(pts.concat([pts[0]]), 0.07 * diag);
+      const nEcken = ecken.length - 1;
+      if (fehler < 0.1 && nEcken > 4) {
+        let ex = rx, ey = ry;
+        if (Math.abs(rx - ry) / Math.max(rx, ry) < 0.15) { ex = ey = (rx + ry) / 2; }
+        const kreis = [];
+        for (let k = 0; k <= 96; k++) { const t = k / 96 * Math.PI * 2; kreis.push({ x: cx + Math.cos(t) * ex, y: cy + Math.sin(t) * ey }); }
+        return { art: ex === ey ? 'kreis' : 'ellipse', punkte: flach(kreis) };
+      }
+      if (nEcken === 3 || nEcken === 4) {
+        let v = ecken.slice(0, nEcken);
+        if (nEcken === 4) {
+          // fast achsenparallel? dann sauberes Rechteck
+          let achsen = true;
+          for (let k = 0; k < 4; k++) {
+            const p1 = v[k], p2 = v[(k + 1) % 4], w = Math.abs(Math.atan2(p2.y - p1.y, p2.x - p1.x)) % (Math.PI / 2);
+            if (Math.min(w, Math.PI / 2 - w) > 12 * Math.PI / 180) achsen = false;
+          }
+          if (achsen) {
+            const vx0 = Math.min.apply(null, v.map(function (q) { return q.x; })), vx1 = Math.max.apply(null, v.map(function (q) { return q.x; }));
+            const vy0 = Math.min.apply(null, v.map(function (q) { return q.y; })), vy1 = Math.max.apply(null, v.map(function (q) { return q.y; }));
+            v = [{ x: vx0, y: vy0 }, { x: vx1, y: vy0 }, { x: vx1, y: vy1 }, { x: vx0, y: vy1 }];
+          }
+        }
+        return { art: nEcken === 3 ? 'dreieck' : 'viereck', punkte: flach(v.concat([v[0]])) };
+      }
+      return null;
+    }
+    // offener Linienzug (z. B. Winkel, Pfeilspitze, Zickzack mit wenigen Knicken)
+    const knicke = rdp(pts, 0.06 * diag);
+    if (knicke.length >= 3 && knicke.length <= 4) {
+      let ok = true;
+      pts.forEach(function (q) {
+        let best = Infinity;
+        for (let k = 0; k < knicke.length - 1; k++) best = Math.min(best, abstandStrecke(q, knicke[k], knicke[k + 1]));
+        if (best > 0.08 * diag) ok = false;
+      });
+      if (ok) return { art: 'linienzug', punkte: flach(knicke) };
+    }
+    return null;
+  }
+
+  /* ---------- Lineal ---------- */
+  function linealUmschalten() {
+    if (E.lineal) { E.lineal = null; }
+    else {
+      const L = Math.min(E.vw * 0.86, 820);
+      E.lineal = { cx: E.vw / 2, cy: E.vh * 0.45, w: 0, L: L, B: 76 };
+      toast('Lineal: mit einem Finger verschieben, mit zwei Fingern drehen. Mit dem Stift an der Kante entlangfahren.', false, 4200);
+    }
+    E.el.linealKnopf.classList.toggle('aktiv', !!E.lineal);
+    linealSync();
+  }
+  function linealAchsen(l) { const c = Math.cos(l.w), sn = Math.sin(l.w); return { ux: c, uy: sn, nx: -sn, ny: c }; }
+  function linealLokal(l, pt) { const a = linealAchsen(l), dx = pt.x - l.cx, dy = pt.y - l.cy; return { u: dx * a.ux + dy * a.uy, v: dx * a.nx + dy * a.ny }; }
+  function imLineal(pt) { const l = E.lineal; if (!l) return false; const q = linealLokal(l, pt); return Math.abs(q.u) <= l.L / 2 && Math.abs(q.v) <= l.B / 2; }
+  function linealKante(pt) {
+    const l = E.lineal;
+    if (!l) return null;
+    const q = linealLokal(l, pt);
+    if (Math.abs(q.u) > l.L / 2 + 30) return null;
+    const oben = Math.abs(q.v + l.B / 2), unten = Math.abs(q.v - l.B / 2);
+    if (Math.min(oben, unten) > 26) return null;
+    return { v: oben < unten ? -l.B / 2 : l.B / 2 };
+  }
+  function aufKante(l, kante, pt) {
+    const a = linealAchsen(l), q = linealLokal(l, pt);
+    return { x: l.cx + a.ux * q.u + a.nx * kante.v, y: l.cy + a.uy * q.u + a.ny * kante.v };
+  }
+  function linealTouchStart(e, pt, maus) {
+    if (!E.lineal) return false;
+    if (E.linealZug) {                                           // zweiter Finger → drehen
+      if (E.linealZug.touches.size >= 2) return true;
+      E.linealZug.touches.set(e.pointerId, { x: pt.x, y: pt.y });
+      linealZugBasis();
+      try { E.el.eingabe.setPointerCapture(e.pointerId); } catch (x) { }
+      return true;
+    }
+    if (E.touches.size || E.zeiger !== null || !imLineal(pt)) return false;
+    E.linealZug = { touches: new Map([[e.pointerId, { x: pt.x, y: pt.y }]]), maus: !!maus };
+    if (maus) {                                                   // Maus: an den Enden drehen, in der Mitte schieben
+      const q = linealLokal(E.lineal, pt);
+      E.linealZug.drehen = Math.abs(q.u) > E.lineal.L * 0.36;
+    }
+    linealZugBasis();
+    try { E.el.eingabe.setPointerCapture(e.pointerId); } catch (x) { }
+    return true;
+  }
+  function linealZugBasis() {
+    const z = E.linealZug, l = E.lineal, ts = Array.from(z.touches.values());
+    z.basis = { cx: l.cx, cy: l.cy, w: l.w, punkte: ts.map(function (t) { return { x: t.x, y: t.y }; }) };
+  }
+  function linealTouchMove(e) {
+    const z = E.linealZug, l = E.lineal;
+    if (!l) return;
+    const pt = punktAus(e);
+    z.touches.set(e.pointerId, { x: pt.x, y: pt.y });
+    const ts = Array.from(z.touches.values()), b = z.basis;
+    if (ts.length >= 2 && b.punkte.length >= 2) {
+      const w0 = Math.atan2(b.punkte[1].y - b.punkte[0].y, b.punkte[1].x - b.punkte[0].x);
+      const w1 = Math.atan2(ts[1].y - ts[0].y, ts[1].x - ts[0].x);
+      l.w = b.w + (w1 - w0);
+      l.cx = b.cx + ((ts[0].x + ts[1].x) - (b.punkte[0].x + b.punkte[1].x)) / 2;
+      l.cy = b.cy + ((ts[0].y + ts[1].y) - (b.punkte[0].y + b.punkte[1].y)) / 2;
+    } else if (z.maus && z.drehen) {
+      l.w = b.w + Math.atan2(pt.y - l.cy, pt.x - l.cx) - Math.atan2(b.punkte[0].y - l.cy, b.punkte[0].x - l.cx);
+    } else {
+      l.cx = b.cx + pt.x - b.punkte[0].x; l.cy = b.cy + pt.y - b.punkte[0].y;
+    }
+    const grad = l.w * 180 / Math.PI, rund = Math.round(grad / 45) * 45;
+    if (Math.abs(grad - rund) < 2.5) l.w = rund * Math.PI / 180;
+    l.cx = grenze(l.cx, -l.L / 3, E.vw + l.L / 3); l.cy = grenze(l.cy, 0, E.vh);
+    linealSync();
+  }
+  function linealTouchEnde(e) {
+    const z = E.linealZug;
+    z.touches.delete(e.pointerId);
+    if (!z.touches.size) E.linealZug = null; else linealZugBasis();
+  }
+  function linealSync() {
+    let el = E.el.lineal;
+    if (!E.lineal) { if (el) el.hidden = true; return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'nb-lineal';
+      el.innerHTML = '<div class="nb-lineal-skala"></div><div class="nb-lineal-skala nb-unten"></div><span class="nb-lineal-grad"></span>';
+      E.el.flaeche.insertBefore(el, E.el.eingabe.nextSibling);
+      E.el.lineal = el;
+    }
+    const l = E.lineal;
+    el.hidden = false;
+    el.style.width = l.L + 'px'; el.style.height = l.B + 'px';
+    el.style.transform = 'translate(' + (l.cx - l.L / 2).toFixed(1) + 'px,' + (l.cy - l.B / 2).toFixed(1) + 'px) rotate(' + l.w.toFixed(4) + 'rad)';
+    const cm = 28.3465 * skala();
+    el.style.setProperty('--cm', cm.toFixed(2) + 'px');
+    el.style.setProperty('--mm', (cm / 10).toFixed(3) + 'px');
+    el.classList.toggle('ohne-mm', cm / 10 < 4);
+    let g = ((l.w * 180 / Math.PI) % 180 + 180) % 180;
+    if (g > 90) g = 180 - g;
+    el.querySelector('.nb-lineal-grad').textContent = Math.round(g) + '°';
   }
 
   /* ---------- Radierer ---------- */
@@ -1663,6 +1911,69 @@
     layout(); kameraBegrenzen(); buchSchmutzig(); planeAlles();
     toast('Seite ' + (i + 1) + ' gelöscht', true);
   }
+  function seiteDuplizieren(i) {
+    textBeenden(); auswahlAufheben(true);
+    const q = E.seiten[i];
+    if (!q) return;
+    const s = JSON.parse(JSON.stringify(q));
+    s.id = uid(); s.erstellt = jetzt(); s.g = jetzt();
+    delete s.lz; delete s.ocr;
+    s.striche.forEach(function (x) { x.id = uid(); });
+    s.texte.forEach(function (x) { x.id = uid(); });
+    s.bilder.forEach(function (x) { x.id = uid(); });
+    const index = i + 1;
+    E.seiten.splice(index, 0, s);
+    aktionMerken({ typ: 'seite-neu', index: index, seite: s });
+    schmutzig(s); layout(); kameraBegrenzen(); zuSeite(index);
+    toast('Seite ' + (i + 1) + ' dupliziert');
+  }
+  function seitenOrdnen(ids) {
+    const nachId = new Map(E.seiten.map(function (s) { return [s.id, s]; }));
+    const neu = ids.map(function (id) { return nachId.get(id); }).filter(Boolean);
+    E.seiten.forEach(function (s) { if (neu.indexOf(s) < 0) neu.push(s); });
+    E.seiten = neu;
+    E.buchGeaendert = true;
+    layout(); kameraBegrenzen(); buchSchmutzig(); planeAlles();
+  }
+  function seitenVerschieben(vorher, nachher) {
+    if (vorher.join() === nachher.join()) return;
+    aktionMerken({ typ: 'seite-ordnung', vorher: vorher, nachher: nachher });
+    seitenOrdnen(nachher);
+  }
+  function lesezeichenTitel(s, i) { return s.lz && s.lz.t ? s.lz.t : 'Seite ' + (i + 1); }
+  function lesezeichenSetzen(i, titel) {
+    const s = E.seiten[i];
+    if (!s) return;
+    const nachher = { lz: titel === null ? null : { t: String(titel || '').trim() } };
+    aktionMerken({ typ: 'seite-meta', id: s.id, vorher: { lz: s.lz || null }, nachher: nachher });
+    s.lz = nachher.lz; schmutzig(s); planeAlles();
+  }
+  function lesezeichenPopover(anker) {
+    const i = aktuelleSeite(), s = E.seiten[i];
+    const liste = [];
+    E.seiten.forEach(function (x, k) { if (x.lz) liste.push({ k: k, t: lesezeichenTitel(x, k) }); });
+    popoverZeigen(anker, '<div class="nb-pop-titel">Lesezeichen</div>' +
+      '<div class="nb-lz-feld"><input type="text" maxlength="60" placeholder="Titel für Seite ' + (i + 1) + ' (optional)" value="' + esc(s.lz && s.lz.t || '') + '"></div>' +
+      '<div class="nb-lz-knoepfe"><button class="btn btn-klein btn-primary" data-lz="setzen">' + (s.lz ? 'Speichern' : 'Diese Seite markieren') + '</button>' +
+      (s.lz ? '<button class="btn btn-klein" data-lz="weg">Entfernen</button>' : '') + '</div>' +
+      '<div class="nb-pop-unter">Inhaltsverzeichnis</div>' +
+      (liste.length ? liste.map(function (x) {
+        return '<button class="nb-menue nb-lz-eintrag' + (x.k === i ? ' aktiv' : '') + '" data-lz-seite="' + x.k + '"><span>' + esc(x.t) + '</span><small>S. ' + (x.k + 1) + '</small></button>';
+      }).join('') : '<div class="nb-lz-leer">Noch keine Lesezeichen. Markiere wichtige Seiten, um sie hier schnell zu finden.</div>'),
+      function (p) {
+        const inp = p.querySelector('input');
+        const setzen = function () { lesezeichenSetzen(i, inp.value); popoverSchliessen(); toast('Lesezeichen gesetzt'); };
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); setzen(); } e.stopPropagation(); });
+        p.addEventListener('click', function (e) {
+          const b = e.target.closest('button');
+          if (!b) return;
+          const a = b.getAttribute('data-lz');
+          if (a === 'setzen') setzen();
+          else if (a === 'weg') { lesezeichenSetzen(i, null); popoverSchliessen(); toast('Lesezeichen entfernt'); }
+          else if (b.hasAttribute('data-lz-seite')) { popoverSchliessen(); zuSeite(Number(b.getAttribute('data-lz-seite'))); }
+        });
+      });
+  }
   function vorlageSetzen(i, v) {
     const s = E.seiten[i];
     if (!s || s.v === v) return;
@@ -1673,6 +1984,8 @@
     const n = E.seiten.length, i = aktuelleSeite();
     const txt = (i + 1) + ' / ' + n;
     if (E.el.seitenzahl.textContent !== txt) E.el.seitenzahl.textContent = txt;
+    const s = E.seiten[i];
+    if (E.el.lesezeichen) E.el.lesezeichen.classList.toggle('gesetzt', !!(s && s.lz));
   }
 
   /* ---------- Bilder einfügen ---------- */
@@ -1730,6 +2043,11 @@
     kopieren: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/>',
     loeschen: '<path d="M4 7h16"/><path d="M9 7V4.8h6V7"/><path d="M6.5 7l1 13h9l1-13"/>',
     schliessen: '<path d="M6 6l12 12M18 6L6 18"/>',
+    suche: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    ordner: '<path d="M3.5 7.5a2 2 0 012-2h4l2 2.2h7a2 2 0 012 2v8.3a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/>',
+    lesezeichen: '<path d="M7 3.5h10a1 1 0 011 1V20.5l-6-4.2-6 4.2V4.5a1 1 0 011-1z"/>',
+    lineal: '<path d="M2.8 16.2L16.2 2.8l5 5L7.8 21.2z"/><path d="M6.6 12.4l1.9 1.9M9.1 9.9l1.2 1.2M11.6 7.4l1.9 1.9M14.1 4.9l1.2 1.2"/>',
+    funke: '<path d="M12 3c.5 3.8 1.5 5.8 2.8 7.1C16.1 11.5 18.2 12.5 22 13c-3.8.5-5.9 1.5-7.2 2.9-1.3 1.3-2.3 3.3-2.8 7.1-.5-3.8-1.5-5.8-2.8-7.1C7.9 14.5 5.8 13.5 2 13c3.8-.5 5.9-1.5 7.2-2.9C10.5 8.8 11.5 6.8 12 3z"/>',
     griff: '<circle cx="9" cy="7" r="1.3" fill="currentColor"/><circle cx="15" cy="7" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="17" r="1.3" fill="currentColor"/><circle cx="15" cy="17" r="1.3" fill="currentColor"/>'
   };
   function icon(n) {
@@ -1920,16 +2238,25 @@
     const i = aktuelleSeite(), s = E.seiten[i];
     popoverZeigen(anker, '<div class="nb-pop-titel">Seite ' + (i + 1) + ' von ' + E.seiten.length + '</div>' +
       '<button class="nb-menue" data-m="neu">Neue Seite danach</button>' +
+      '<button class="nb-menue" data-m="kopie">Seite duplizieren</button>' +
       (s.hg ? '' : '<div class="nb-pop-unter">Vorlage dieser Seite</div><div class="nb-vorlagen-mini">' +
         VORLAGEN.map(function (v) { return '<button data-v="' + v[0] + '" class="' + (s.v === v[0] ? 'aktiv' : '') + '"><span class="nb-vl nb-vl-' + v[0] + '"></span>' + v[1] + '</button>'; }).join('') + '</div>') +
-      '<button class="nb-menue" data-m="uebersicht">Alle Seiten anzeigen</button>' +
+      '<button class="nb-menue" data-m="uebersicht">Alle Seiten anzeigen · sortieren</button>' +
+      '<button class="nb-menue" data-m="inhalt">Inhaltsverzeichnis</button>' +
       '<button class="nb-menue" data-m="bild">Bild einfügen …</button>' +
       '<button class="nb-menue" data-m="pdf-rein">PDF-Seiten einfügen …</button>' +
       '<button class="nb-menue" data-m="pdf-raus">Als PDF exportieren</button>' +
+      '<div class="nb-pop-unter">Mit KI lernen</div>' +
+      '<button class="nb-menue nb-ki-menue" data-m="ki-zus">' + icon('funke') + 'Zusammenfassen</button>' +
+      '<button class="nb-menue nb-ki-menue" data-m="ki-karten">' + icon('funke') + 'Karteikarten erstellen</button>' +
+      '<button class="nb-menue nb-ki-menue" data-m="ki-quiz">' + icon('funke') + 'Quiz erstellen</button>' +
+      ((E.buch.lernen || []).length ? '<button class="nb-menue" data-m="lernen">Gespeicherte Lernsets (' + E.buch.lernen.length + ')</button>' : '') +
+      '<div class="nb-pop-linie"></div>' +
       '<button class="nb-menue nb-rot" data-m="weg">Diese Seite löschen</button>' +
       '<div class="nb-pop-linie"></div>' +
       '<label class="nb-umschalter"><span>Mit Finger schreiben</span><input type="checkbox" data-m="finger"' + (W.finger ? ' checked' : '') + '><i></i></label>' +
-      '<label class="nb-umschalter"><span>Durchkritzeln löscht</span><input type="checkbox" data-m="kritzeln"' + (W.kritzeln ? ' checked' : '') + '><i></i></label>',
+      '<label class="nb-umschalter"><span>Durchkritzeln löscht</span><input type="checkbox" data-m="kritzeln"' + (W.kritzeln ? ' checked' : '') + '><i></i></label>' +
+      '<label class="nb-umschalter"><span>Formen erkennen (Stift halten)</span><input type="checkbox" data-m="formen"' + (W.formen ? ' checked' : '') + '><i></i></label>',
       function (p) {
         p.addEventListener('click', function (e) {
           const b = e.target.closest('button');
@@ -1938,15 +2265,22 @@
           const m = b.getAttribute('data-m');
           popoverSchliessen();
           if (m === 'neu') seiteHinzufuegen(i);
+          else if (m === 'kopie') seiteDuplizieren(i);
+          else if (m === 'inhalt') lesezeichenPopover(E.el.lesezeichen);
           else if (m === 'uebersicht') uebersichtZeigen();
           else if (m === 'bild') E.el.bildDatei.click();
           else if (m === 'pdf-rein') E.el.pdfDatei.click();
           else if (m === 'pdf-raus') pdfExportieren(E.buch, E.seiten);
+          else if (m === 'ki-zus') zusammenfassen();
+          else if (m === 'ki-karten') lernenErstellen('karten');
+          else if (m === 'ki-quiz') lernenErstellen('quiz');
+          else if (m === 'lernen') lernenListe(E.buch, true);
           else if (m === 'weg') { if (confirm('Seite ' + (i + 1) + ' wirklich löschen?')) seiteLoeschen(i); }
         });
         $$(p, 'input[type=checkbox]').forEach(function (c) {
           c.addEventListener('change', function () {
             if (c.getAttribute('data-m') === 'finger') { W.finger = c.checked; toast(c.checked ? 'Finger schreibt – zwei Finger blättern und zoomen' : 'Nur Apple Pencil schreibt – Finger blättert'); }
+            else if (c.getAttribute('data-m') === 'formen') W.formen = c.checked;
             else W.kritzeln = c.checked;
             werkzeugSpeichern();
           });
@@ -1954,37 +2288,128 @@
       });
   }
 
-  /* ---------- Seitenübersicht ---------- */
+  /* ---------- Seitenübersicht (mit Sortieren per Ziehen) ---------- */
   function uebersichtZeigen() {
     textBeenden();
+    if (E.uebersicht) E.uebersicht.remove();
     const ov = document.createElement('div');
     ov.className = 'nb-uebersicht';
     ov.innerHTML = '<div class="nb-ueb-kopf"><b>Seiten</b><span class="nb-ueb-zahl">' + E.seiten.length + '</span>' +
       '<button class="btn btn-klein" data-u="neu">+ Seite</button><button class="nb-knopf" data-u="zu" aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
+      '<div class="nb-ueb-tipp">Zum Sortieren eine Seite gedrückt halten und ziehen.</div>' +
       '<div class="nb-ueb-gitter">' + E.seiten.map(function (s, i) {
-        return '<div class="nb-ueb-seite" data-i="' + i + '"><div class="nb-ueb-bild" style="aspect-ratio:' + s.b + '/' + s.h + '"><canvas></canvas></div>' +
-          '<div class="nb-ueb-fuss"><span>' + (i + 1) + '</span><button data-weg="' + i + '" aria-label="Seite löschen">' + icon('loeschen') + '</button></div></div>';
+        return '<div class="nb-ueb-seite" data-id="' + s.id + '"><div class="nb-ueb-bild" style="aspect-ratio:' + s.b + '/' + s.h + '"><canvas></canvas>' +
+          (s.lz ? '<span class="nb-ueb-band" title="' + esc(lesezeichenTitel(s, i)) + '"></span>' : '') + '</div>' +
+          '<div class="nb-ueb-fuss"><span class="nb-ueb-nr">' + (i + 1) + (s.lz && s.lz.t ? ' · ' + esc(s.lz.t) : '') + '</span>' +
+          '<button data-kopie="1" aria-label="Seite duplizieren" title="Duplizieren">' + icon('kopieren') + '</button>' +
+          '<button data-weg="1" aria-label="Seite löschen" title="Löschen">' + icon('loeschen') + '</button></div></div>';
       }).join('') + '</div>';
     E.el.root.appendChild(ov);
     E.uebersicht = ov;
+    const gitter = ov.querySelector('.nb-ueb-gitter');
+    function indexVon(kachel) { return E.seiten.findIndex(function (x) { return x.id === kachel.getAttribute('data-id'); }); }
+    function schliessen() { ov.remove(); if (E) E.uebersicht = null; }
+    let unterdruecken = false;
     ov.addEventListener('click', function (e) {
-      const weg = e.target.closest('[data-weg]');
-      if (weg) {
-        const i = Number(weg.getAttribute('data-weg'));
-        if (confirm('Seite ' + (i + 1) + ' wirklich löschen?')) { schliessen(); seiteLoeschen(i); }
+      if (unterdruecken && e.target.closest('.nb-ueb-gitter')) { unterdruecken = false; e.stopPropagation(); return; }
+      const kachel = e.target.closest('.nb-ueb-seite');
+      if (e.target.closest('[data-weg]') && kachel) {
+        const i = indexVon(kachel);
+        if (i >= 0 && confirm('Seite ' + (i + 1) + ' wirklich löschen?')) { schliessen(); seiteLoeschen(i); }
         return;
       }
+      if (e.target.closest('[data-kopie]') && kachel) { const i = indexVon(kachel); schliessen(); seiteDuplizieren(i); return; }
       const u = e.target.closest('[data-u]');
       if (u) { const a = u.getAttribute('data-u'); schliessen(); if (a === 'neu') seiteHinzufuegen(E.seiten.length - 1); return; }
-      const s = e.target.closest('[data-i]');
-      if (s) { schliessen(); zuSeite(Number(s.getAttribute('data-i'))); }
+      if (kachel) { const i = indexVon(kachel); schliessen(); if (i >= 0) zuSeite(i); }
     });
-    function schliessen() { ov.remove(); if (E) E.uebersicht = null; }
+
+    /* Ziehen: Finger lange drücken, Maus/Stift einfach ziehen */
+    let zug = null;
+    gitter.addEventListener('pointerdown', function (e) {
+      const kachel = e.target.closest('.nb-ueb-seite');
+      if (!kachel || e.target.closest('button') || zug) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      zug = { kachel: kachel, id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, aktiv: false, typ: e.pointerType,
+        vorher: E.seiten.map(function (s) { return s.id; }) };
+      if (e.pointerType === 'touch') zug.timer = setTimeout(function () { if (zug && !zug.aktiv) zugStarten(); }, 330);
+    });
+    function zugStarten() {
+      zug.aktiv = true;
+      try { gitter.setPointerCapture(zug.id); } catch (x) { }
+      const r = zug.kachel.getBoundingClientRect();
+      const geist = zug.kachel.cloneNode(true);
+      const quelle = zug.kachel.querySelector('canvas'), ziel = geist.querySelector('canvas');
+      if (quelle && ziel) { ziel.width = quelle.width; ziel.height = quelle.height; ziel.getContext('2d').drawImage(quelle, 0, 0); }
+      geist.className = 'nb-ueb-seite nb-ueb-geist';
+      geist.style.width = r.width + 'px';
+      geist.style.left = r.left + 'px'; geist.style.top = r.top + 'px';
+      zug.dx = zug.x - r.left; zug.dy = zug.y - r.top;
+      document.body.appendChild(geist);
+      zug.geist = geist;
+      zug.kachel.classList.add('nb-ueb-platz');
+      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (x) { } }
+      rollen();
+    }
+    function rollen() {
+      if (!zug || !zug.aktiv) return;
+      const r = gitter.getBoundingClientRect();
+      if (zug.y < r.top + 70) gitter.scrollTop -= 10;
+      else if (zug.y > r.bottom - 70) gitter.scrollTop += 10;
+      platzSuchen();
+      zug.raf = requestAnimationFrame(rollen);
+    }
+    function platzSuchen() {
+      const kacheln = $$(gitter, '.nb-ueb-seite');
+      let ziel = null, nachher = false;
+      for (const k of kacheln) {
+        if (k === zug.kachel) continue;
+        const r = k.getBoundingClientRect();
+        if (zug.x >= r.left - 8 && zug.x <= r.right + 8 && zug.y >= r.top - 8 && zug.y <= r.bottom + 8) { ziel = k; nachher = zug.x > r.left + r.width / 2; break; }
+      }
+      if (!ziel) return;
+      if (nachher) { if (ziel.nextSibling !== zug.kachel) gitter.insertBefore(zug.kachel, ziel.nextSibling); }
+      else if (ziel.previousSibling !== zug.kachel) gitter.insertBefore(zug.kachel, ziel);
+    }
+    gitter.addEventListener('pointermove', function (e) {
+      if (!zug || e.pointerId !== zug.id) return;
+      zug.x = e.clientX; zug.y = e.clientY;
+      const weit = Math.hypot(zug.x - zug.x0, zug.y - zug.y0);
+      if (!zug.aktiv) {
+        if (zug.typ === 'touch') { if (weit > 10) { clearTimeout(zug.timer); zug = null; } return; }   // Finger: normales Scrollen
+        if (weit > 8) zugStarten(); else return;
+      }
+      zug.geist.style.left = (zug.x - zug.dx) + 'px'; zug.geist.style.top = (zug.y - zug.dy) + 'px';
+      e.preventDefault();
+    });
+    gitter.addEventListener('touchmove', function (e) { if (zug && zug.aktiv) e.preventDefault(); }, { passive: false });
+    function zugEnde(e) {
+      if (!zug || (e && e.pointerId !== zug.id)) return;
+      clearTimeout(zug.timer);
+      const z = zug; zug = null;
+      if (!z.aktiv) return;
+      cancelAnimationFrame(z.raf);
+      z.geist.remove();
+      z.kachel.classList.remove('nb-ueb-platz');
+      unterdruecken = true;
+      setTimeout(function () { unterdruecken = false; }, 350);
+      const nachher = $$(gitter, '.nb-ueb-seite').map(function (k) { return k.getAttribute('data-id'); });
+      seitenVerschieben(z.vorher, nachher);
+      $$(gitter, '.nb-ueb-seite').forEach(function (k, i) {
+        const s = E.seiten[i];
+        k.querySelector('.nb-ueb-nr').innerHTML = (i + 1) + (s && s.lz && s.lz.t ? ' · ' + esc(s.lz.t) : '');
+      });
+    }
+    gitter.addEventListener('pointerup', zugEnde);
+    gitter.addEventListener('pointercancel', zugEnde);
+    gitter.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
     (async function () {
       const kacheln = $$(ov, '.nb-ueb-seite');
       for (let i = 0; i < kacheln.length; i++) {
         if (!ov.isConnected || !E) return;
-        const s = E.seiten[i];
+        const s = E.seiten.find(function (x) { return x.id === kacheln[i].getAttribute('data-id'); });
+        if (!s) continue;
         try {
           const c = await seiteRendern(s, 220);
           const ziel = kacheln[i].querySelector('canvas');
@@ -2031,7 +2456,9 @@
                 (STIFTE.indexOf(w) >= 0 || w === 'marker' ? '<span class="nb-farbstrich"></span>' : '') + '</button>';
             }).join('') +
             '<button class="nb-knopf" data-nb-aktion="bild" title="Bild einfügen" aria-label="Bild einfügen">' + icon('bild') + '</button>' +
+            '<button class="nb-knopf" data-nb-aktion="lineal" title="Lineal" aria-label="Lineal">' + icon('lineal') + '</button>' +
           '</div>' +
+          '<button class="nb-knopf nb-lz-knopf" data-nb-aktion="lesezeichen" title="Lesezeichen" aria-label="Lesezeichen">' + icon('lesezeichen') + '</button>' +
           '<button class="nb-knopf" data-nb-aktion="undo" title="Rückgängig" aria-label="Rückgängig">' + icon('undo') + '</button>' +
           '<button class="nb-knopf" data-nb-aktion="redo" title="Wiederholen" aria-label="Wiederholen">' + icon('redo') + '</button>' +
           '<button class="nb-knopf" data-nb-aktion="mehr" title="Mehr" aria-label="Mehr">' + icon('mehr') + '</button>' +
@@ -2061,7 +2488,8 @@
       root: root, flaeche: q('.nb-flaeche'), haupt: q('.nb-haupt'), live: q('.nb-live'), eingabe: q('.nb-eingabe'),
       textebene: q('.nb-textebene'), textRahmen: q('.nb-textrahmen'), auswahlMenue: q('.nb-auswahlmenue'),
       seitenzahl: q('.nb-seitenzahl'), zeile2: q('.nb-zeile2'), undo: q('[data-nb-aktion=undo]'), redo: q('[data-nb-aktion=redo]'),
-      titel: q('.nb-buchtitel'), bildDatei: q('[data-nb-datei=bild]'), pdfDatei: q('[data-nb-datei=pdf]')
+      titel: q('.nb-buchtitel'), bildDatei: q('[data-nb-datei=bild]'), pdfDatei: q('[data-nb-datei=pdf]'),
+      lesezeichen: q('[data-nb-aktion=lesezeichen]'), linealKnopf: q('[data-nb-aktion=lineal]')
     };
     E.el.titel.textContent = E.buch.titel;
     const ein = E.el.eingabe;
@@ -2085,6 +2513,8 @@
       else if (a === 'redo') wiederholen();
       else if (a === 'mehr') menuePopover(b);
       else if (a === 'bild') E.el.bildDatei.click();
+      else if (a === 'lesezeichen') lesezeichenPopover(b);
+      else if (a === 'lineal') linealUmschalten();
     });
     E.el.zeile2.addEventListener('click', zeile2Klick);
     E.el.seitenzahl.addEventListener('click', uebersichtZeigen);
@@ -2134,7 +2564,7 @@
     textBeenden();
     speichern();
   }
-  async function oeffnen(id) {
+  async function oeffnen(id, startSeite) {
     if (E || abgleichLaeuft) return;
     let buch = buecher.find(function (b) { return b.id === id; });
     if (!buch) buch = await holen('buecher', id).catch(function () { return null; });
@@ -2160,7 +2590,7 @@
     werkzeugWaehlen(W.wz);
     knoepfeAktualisieren();
     groesseAnpassen();
-    const start = buch.zuletzt ? grenze(buch.zuletzt.seite || 0, 0, seiten.length - 1) : 0;
+    const start = typeof startSeite === 'number' && !isNaN(startSeite) ? grenze(startSeite, 0, seiten.length - 1) : (buch.zuletzt ? grenze(buch.zuletzt.seite || 0, 0, seiten.length - 1) : 0);
     zuSeite(start);
     document.addEventListener('keydown', tastatur, true);
     window.addEventListener('pagehide', sofortSpeichern);
@@ -2220,8 +2650,26 @@
       kinder.push(nSeite + ' 0 R');
     }
     objekt(2, '<< /Type /Pages /Kids [' + kinder.join(' ') + '] /Count ' + seiten.length + ' >>');
-    objekt(1, '<< /Type /Catalog /Pages 2 0 R >>');
-    const anzahl = 3 + seiten.length * 3;
+    // Lesezeichen als PDF-Gliederung
+    const marken = [];
+    seiten.forEach(function (s, i) { if (s.lz) marken.push({ i: i, t: lesezeichenTitel(s, i), h: r2(s.h) }); });
+    let anzahl = 3 + seiten.length * 3;
+    if (marken.length) {
+      const wurzel = anzahl, erste = wurzel + 1, letzte = wurzel + marken.length;
+      const hex = function (t) {
+        let h = 'FEFF';
+        for (let k = 0; k < t.length; k++) h += t.charCodeAt(k).toString(16).toUpperCase().padStart(4, '0');
+        return '<' + h + '>';
+      };
+      marken.forEach(function (m, k) {
+        const nr = erste + k;
+        objekt(nr, '<< /Title ' + hex(m.t) + ' /Parent ' + wurzel + ' 0 R' + (k ? ' /Prev ' + (nr - 1) + ' 0 R' : '') +
+          (k < marken.length - 1 ? ' /Next ' + (nr + 1) + ' 0 R' : '') + ' /Dest [' + (3 + m.i * 3) + ' 0 R /XYZ 0 ' + m.h + ' 0] >>');
+      });
+      objekt(wurzel, '<< /Type /Outlines /First ' + erste + ' 0 R /Last ' + letzte + ' 0 R /Count ' + marken.length + ' >>');
+      objekt(1, '<< /Type /Catalog /Pages 2 0 R /Outlines ' + wurzel + ' 0 R /PageMode /UseOutlines >>');
+      anzahl = letzte + 1;
+    } else objekt(1, '<< /Type /Catalog /Pages 2 0 R >>');
     const xref = laenge;
     let x = 'xref\n0 ' + anzahl + '\n0000000000 65535 f \n';
     for (let n = 1; n < anzahl; n++) x += String(offsets[n]).padStart(10, '0') + ' 00000 n \n';
@@ -2306,7 +2754,9 @@
         await seite.render({ canvasContext: ctx, viewport: vp }).promise;
         const blob = await new Promise(function (ok) { c.toBlob(ok, 'image/jpeg', 0.9); });
         const id = await dateiSpeichern(blob, buchId);
-        ergebnis.push({ b: r2(basis.width), h: r2(basis.height), hg: id, v: 'blanko' });
+        let pdfText = '';
+        try { const tc = await seite.getTextContent(); pdfText = tc.items.map(function (x) { return x.str + (x.hasEOL ? '\n' : ' '); }).join('').replace(/[ \t]+/g, ' ').trim(); } catch (e) { }
+        ergebnis.push({ b: r2(basis.width), h: r2(basis.height), hg: id, v: 'blanko', pdfText: pdfText });
         seite.cleanup();
         c.width = c.height = 0;
       }
@@ -2357,6 +2807,366 @@
       } catch (x) { }
       throw e;
     }
+  }
+
+  /* ============================================================
+     KI für Notizbücher (Gemini über den Assistenten)
+     ============================================================ */
+  function kiDa() { return !!(window.Assistent && window.Assistent.verfuegbar && window.Assistent.verfuegbar()); }
+  function kiFehltHinweis() {
+    alert('Für diese Funktion brauchst du den KI-Assistenten. Trag unter Einstellungen → KI-Assistent deinen Gemini-Schlüssel ein.');
+  }
+  async function seiteAlsBild(seite, breite) {
+    const c = await seiteRendern(seite, breite || 1100);
+    const blob = await new Promise(function (ok) { c.toBlob(ok, 'image/jpeg', 0.82); });
+    const url = await alsDataUrl(blob);
+    return url.slice(url.indexOf(',') + 1);
+  }
+  function getippterText(seite) {
+    const t = [];
+    (seite.texte || []).forEach(function (x) { if (x.text) t.push(x.text); });
+    if (seite.pdfText) t.push(seite.pdfText);
+    return t.join('\n');
+  }
+  function brauchtLesen(seite) {
+    const hatInhalt = (seite.striche && seite.striche.length) || (seite.bilder && seite.bilder.length) || (seite.hg && !seite.pdfText);
+    return !!hatInhalt && !(seite.ocr && seite.ocr.g === seitenZeit(seite));
+  }
+  /* Handschrift seitenweise von der KI lesen lassen (3 Seiten pro Anfrage) */
+  async function seitenLesen(seiten, melden) {
+    const offen = seiten.filter(brauchtLesen);
+    const schema = { type: 'ARRAY', items: { type: 'OBJECT', properties: { seite: { type: 'INTEGER' }, text: { type: 'STRING' } }, required: ['seite', 'text'] } };
+    for (let i = 0; i < offen.length; i += 3) {
+      const gruppe = offen.slice(i, i + 3);
+      if (melden) melden(Math.min(i + gruppe.length, offen.length), offen.length);
+      await Promise.all(gruppe.map(function (s) { return bilderVorbereiten(s); }));
+      const teile = [{ text: 'Lies die folgenden ' + gruppe.length + ' Notizbuchseiten eines Schülers. Schreib für jede Seite den gesamten handschriftlichen und gedruckten Text ' +
+        'wörtlich ab (Deutsch, Rechtschreibung nicht verbessern). Formeln einfach schreiben, z. B. a^2 + b^2 = c^2 oder Wurzel(x). Zeichnungen kurz in [eckigen Klammern] beschreiben. ' +
+        'Leere Seite = leerer Text. Antworte als JSON-Liste mit seite (1 bis ' + gruppe.length + ') und text.' }];
+      for (let k = 0; k < gruppe.length; k++) {
+        teile.push({ text: 'Seite ' + (k + 1) + ':' });
+        teile.push({ inlineData: { mimeType: 'image/jpeg', data: await seiteAlsBild(gruppe[k], 1100) } });
+      }
+      const antwort = await window.Assistent.gemini({ teile: teile, schema: schema, warten: function () { fortschritt('Limit erreicht – kurz warten …'); } });
+      (Array.isArray(antwort) ? antwort : []).forEach(function (a) {
+        const s = gruppe[(Number(a.seite) || 0) - 1];
+        if (s) s.ocr = { g: seitenZeit(s), t: String(a.text || '').slice(0, 20000) };
+      });
+      gruppe.forEach(function (s) { if (!s.ocr || s.ocr.g !== seitenZeit(s)) s.ocr = { g: seitenZeit(s), t: '' }; });
+      await seitenOhneZeitSpeichern(gruppe);
+    }
+    return offen.length;
+  }
+  /* speichert Seiten, ohne den Änderungszeitpunkt zu verstellen (Lesen ist keine Bearbeitung) */
+  async function seitenOhneZeitSpeichern(liste) {
+    if (E && liste.length && liste[0].buch === E.buch.id) {
+      liste.forEach(function (s) { if (E.seiten.indexOf(s) >= 0) E.dirty.add(s.id); });
+      const g = liste.map(function (s) { return s.g; });
+      await speichern();
+      liste.forEach(function (s, i) { s.g = g[i]; });
+      return;
+    }
+    await transaktion(['seiten'], 'readwrite', function (st) { liste.forEach(function (s) { st.seiten.put(s); }); });
+  }
+  function kiText(seite) { return [seite.ocr && seite.ocr.t, getippterText(seite)].filter(Boolean).join('\n'); }
+  /* Inhalt für die KI: wenige Seiten als Bild, viele Seiten als gelesener Text */
+  async function kiQuelle(seiten) {
+    if (seiten.length <= 4) {
+      const teile = [];
+      for (let k = 0; k < seiten.length; k++) {
+        await bilderVorbereiten(seiten[k]);
+        teile.push({ text: 'Seite ' + (k + 1) + (getippterText(seiten[k]) ? ' (getippter Text: ' + getippterText(seiten[k]).slice(0, 4000) + ')' : '') + ':' });
+        teile.push({ inlineData: { mimeType: 'image/jpeg', data: await seiteAlsBild(seiten[k], 1100) } });
+      }
+      return teile;
+    }
+    await seitenLesen(seiten, function (i, n) { fortschritt('KI liest deine Handschrift … Seite ' + i + ' von ' + n); });
+    let text = '';
+    seiten.forEach(function (s, k) { const t = kiText(s); if (t) text += '\n--- Seite ' + (k + 1) + ' ---\n' + t; });
+    if (!text.trim()) throw new Error('Auf diesen Seiten ist noch nichts zu lesen.');
+    return [{ text: 'Mitschrift:\n' + text.slice(0, 120000) }];
+  }
+
+  /* ---------- Suche ---------- */
+  let suchZaehler = 0, suchTimer = 0;
+  function normal(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss'); }
+  async function suchen(begriff, max) {
+    const q = normal(begriff).trim();
+    const erg = { treffer: [], ungelesen: 0 };
+    if (!q) return erg;
+    const [bs, ss] = await Promise.all([alle('buecher'), alle('seiten')]);
+    const nachId = new Map(ss.map(function (s) { return [s.id, s]; }));
+    if (E) E.seiten.forEach(function (s) { nachId.set(s.id, s); });
+    const woerter = q.split(/\s+/).filter(Boolean);
+    sortiert(bs).forEach(function (b) {
+      (b.seiten || []).forEach(function (id, idx) {
+        const s = nachId.get(id);
+        if (!s) return;
+        if (brauchtLesen(s)) erg.ungelesen++;
+        const roh = [b.titel, s.lz && s.lz.t, kiText(s)].filter(Boolean).join(' · ');
+        const n = normal(roh);
+        if (!woerter.every(function (w) { return n.indexOf(w) >= 0; })) return;
+        const pos = n.indexOf(woerter[0]);
+        const start = Math.max(0, pos - 60), stueck = roh.slice(start, start + 180).replace(/\s+/g, ' ');
+        erg.treffer.push({ buch: b.id, titel: b.titel, cover: b.cover, seite: idx, auszug: (start ? '…' : '') + stueck + (start + 180 < roh.length ? '…' : '') });
+      });
+    });
+    if (max) erg.treffer = erg.treffer.slice(0, max);
+    return erg;
+  }
+  function markieren(text, begriff) {
+    let h = esc(text);
+    normal(begriff).split(/\s+/).filter(function (w) { return w.length > 1; }).forEach(function (w) {
+      const re = new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      h = h.replace(re, '<mark>$1</mark>');
+    });
+    return h;
+  }
+  function sucheZeigen(el) {
+    const box = el.querySelector('.nb-suchergebnis'), inhalt = el.querySelector('.nb-bibinhalt');
+    if (!box) return;
+    clearTimeout(suchTimer);
+    if (!suchText.trim()) { box.hidden = true; box.innerHTML = ''; inhalt.hidden = false; return; }
+    suchTimer = setTimeout(async function () {
+      const nr = ++suchZaehler, begriff = suchText;
+      const erg = await suchen(begriff, 60).catch(function () { return { treffer: [], ungelesen: 0 }; });
+      if (nr !== suchZaehler || !box.isConnected) return;
+      inhalt.hidden = true; box.hidden = false;
+      box.innerHTML = '<div class="nb-suchinfo"><span>' + (erg.treffer.length ? erg.treffer.length + (erg.treffer.length === 1 ? ' Treffer' : ' Treffer') : 'Keine Treffer') +
+        (erg.ungelesen ? ' · ' + erg.ungelesen + (erg.ungelesen === 1 ? ' handschriftliche Seite' : ' handschriftliche Seiten') + ' noch nicht gelesen' : '') + '</span>' +
+        (erg.ungelesen ? (kiDa() ? '<button class="btn btn-klein btn-primary" data-nb-indexieren>' + icon('funke') + ' Handschrift lesen lassen</button>'
+          : '<span>Zum Durchsuchen von Handschrift den KI-Assistenten einrichten.</span>') : '') + '</div>' +
+        erg.treffer.map(function (t) {
+          const c = COVER[t.cover] || COVER[0];
+          return '<button class="nb-treffer" data-nb-treffer="' + t.buch + '|' + t.seite + '"><span class="nb-mini-cover" style="--c1:' + c[0] + ';--c2:' + c[1] + '"></span>' +
+            '<span><b>' + esc(t.titel) + '</b><small>Seite ' + (t.seite + 1) + '</small><p>' + markieren(t.auszug, begriff) + '</p></span></button>';
+        }).join('');
+      const k = box.querySelector('[data-nb-indexieren]');
+      if (k) k.addEventListener('click', async function () {
+        try {
+          const ss = (await alle('seiten')).filter(brauchtLesen);
+          const n = await seitenLesen(ss, function (i, m) { fortschritt('KI liest deine Handschrift … Seite ' + i + ' von ' + m); });
+          fortschritt(null);
+          toast(n + (n === 1 ? ' Seite gelesen' : ' Seiten gelesen'));
+        } catch (e) { fortschritt(null); alert(e.message || e); }
+        sucheZeigen(el);
+      });
+    }, 160);
+  }
+
+  /* ---------- Zusammenfassen ---------- */
+  function kiErgebnisZeigen(titel, text, knoepfe) {
+    const ov = document.createElement('div');
+    ov.className = 'nb-ki-blatt';
+    ov.innerHTML = '<div class="nb-ki-karte"><div class="nb-ki-kopf"><span class="nb-ki-logo">' + icon('funke') + '</span><b>' + esc(titel) + '</b>' +
+      '<button class="nb-knopf" data-ki-zu aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
+      '<div class="nb-ki-text">' + einfachesMarkdown(text) + '</div><div class="nb-ki-fuss">' +
+      knoepfe.map(function (k, i) { return '<button class="btn' + (k.primaer ? ' btn-primary' : '') + '" data-ki-k="' + i + '">' + esc(k.text) + '</button>'; }).join('') +
+      '<span class="nb-ki-hinweis">KI kann sich irren – prüf das Wichtigste nach.</span></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function (e) {
+      if (e.target === ov || e.target.closest('[data-ki-zu]')) { ov.remove(); return; }
+      const b = e.target.closest('[data-ki-k]');
+      if (b) { const k = knoepfe[Number(b.getAttribute('data-ki-k'))]; if (k.aktion() !== false) ov.remove(); }
+    });
+    return ov;
+  }
+  function einfachesMarkdown(text) {
+    const zeilen = esc(text).split('\n');
+    let h = '', liste = false;
+    zeilen.forEach(function (z) {
+      const ueber = z.match(/^#{1,4}\s+(.*)$/), punkt = z.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+      if (punkt) { if (!liste) { h += '<ul>'; liste = true; } h += '<li>' + punkt[1] + '</li>'; return; }
+      if (liste) { h += '</ul>'; liste = false; }
+      if (ueber) h += '<h4>' + ueber[1] + '</h4>';
+      else if (z.trim()) h += '<p>' + z + '</p>';
+    });
+    if (liste) h += '</ul>';
+    return h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  }
+  function kiBereichWaehlen(titel, weiter) {
+    const i = aktuelleSeite();
+    popoverZeigen(E.el.root.querySelector('[data-nb-aktion=mehr]'), '<div class="nb-pop-titel">' + esc(titel) + '</div>' +
+      '<button class="nb-menue" data-b="seite">Nur diese Seite (Seite ' + (i + 1) + ')</button>' +
+      (E.seiten.length > 1 ? '<button class="nb-menue" data-b="buch">Ganzes Notizbuch (' + E.seiten.length + ' Seiten)</button>' : '') +
+      (E.seiten.some(function (s) { return s.lz; }) ? '<button class="nb-menue" data-b="kapitel">Ab dem letzten Lesezeichen</button>' : ''),
+      function (p) {
+        p.addEventListener('click', function (e) {
+          const b = e.target.closest('[data-b]');
+          if (!b) return;
+          popoverSchliessen();
+          const art = b.getAttribute('data-b');
+          let seiten = [E.seiten[i]], name = 'Seite ' + (i + 1);
+          if (art === 'buch') { seiten = E.seiten.slice(); name = 'ganzes Notizbuch'; }
+          else if (art === 'kapitel') {
+            let s0 = 0;
+            for (let k = i; k >= 0; k--) if (E.seiten[k].lz) { s0 = k; break; }
+            let s1 = E.seiten.length - 1;
+            for (let k = s0 + 1; k < E.seiten.length; k++) if (E.seiten[k].lz) { s1 = k - 1; break; }
+            seiten = E.seiten.slice(s0, s1 + 1); name = lesezeichenTitel(E.seiten[s0], s0);
+          }
+          weiter(seiten, name);
+        });
+      });
+  }
+  function zusammenfassen() {
+    if (!kiDa()) { kiFehltHinweis(); return; }
+    textBeenden();
+    kiBereichWaehlen('Mit KI zusammenfassen', async function (seiten, name) {
+      const ed = E;
+      try {
+        fortschritt('KI liest und fasst zusammen …');
+        const teile = await kiQuelle(seiten);
+        fortschritt('KI fasst zusammen …');
+        teile.unshift({ text: 'Fasse diese Schul-Mitschrift (' + (ed.buch.titel) + ', ' + name + ') für einen Schüler zusammen: zuerst ein Satz worum es geht, dann die wichtigsten Punkte, ' +
+          'Formeln und Begriffe als Liste, zum Schluss „Merke:“ mit 1–3 Kernaussagen. Auf Deutsch, knapp, mit **fett** für Schlüsselbegriffe. Erfinde nichts, was nicht in der Mitschrift steht.' });
+        const text = await window.Assistent.gemini({ teile: teile, warten: function () { fortschritt('Limit erreicht – kurz warten …'); } });
+        fortschritt(null);
+        if (E !== ed) return;
+        kiErgebnisZeigen('Zusammenfassung · ' + name, text, [
+          { text: 'Als Seite einfügen', primaer: true, aktion: function () { textSeiteEinfuegen('Zusammenfassung – ' + name, text); } },
+          { text: 'Kopieren', aktion: function () { try { navigator.clipboard.writeText(text); toast('Kopiert'); } catch (e) { } return false; } }
+        ]);
+      } catch (e) { fortschritt(null); alert(e.message || e); }
+    });
+  }
+  function textSeiteEinfuegen(titel, text) {
+    if (!E) return;
+    const i = aktuelleSeite();
+    const s = neueSeite(E.buch, { v: 'blanko', papier: E.seiten[i] ? E.seiten[i].papier : E.buch.papier });
+    const rein = text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,4}\s+/gm, '').replace(/^\s*[*•]\s+/gm, '– ').replace(/^\s*-\s+/gm, '– ');
+    s.texte = [
+      { id: uid(), x: 36, y: 34, w: s.b - 72, text: titel, g: 18, f: '#1D1D1F', fett: true },
+      { id: uid(), x: 36, y: 70, w: s.b - 72, text: rein.slice(0, 6000), g: s.b < 500 ? 10 : 11, f: '#1D1D1F', fett: false }
+    ];
+    const index = i + 1;
+    E.seiten.splice(index, 0, s);
+    aktionMerken({ typ: 'seite-neu', index: index, seite: s });
+    schmutzig(s); layout(); kameraBegrenzen(); zuSeite(index);
+    toast('Zusammenfassung als Seite ' + (index + 1) + ' eingefügt');
+  }
+
+  /* ---------- Karteikarten und Quiz ---------- */
+  function lernenErstellen(art) {
+    if (!kiDa()) { kiFehltHinweis(); return; }
+    textBeenden();
+    kiBereichWaehlen(art === 'quiz' ? 'Quiz erstellen' : 'Karteikarten erstellen', async function (seiten, name) {
+      const ed = E;
+      try {
+        fortschritt('KI liest deine Mitschrift …');
+        const teile = await kiQuelle(seiten);
+        fortschritt(art === 'quiz' ? 'KI erstellt das Quiz …' : 'KI erstellt Karteikarten …');
+        let schema;
+        if (art === 'quiz') {
+          teile.unshift({ text: 'Erstelle aus dieser Schul-Mitschrift ein Übungsquiz mit 6 bis 10 Multiple-Choice-Fragen auf Deutsch. Jede Frage hat genau 4 Antworten, genau eine ist richtig ' +
+            '(Index 0–3 in „richtig“), die falschen sind plausibel. Gib zu jeder Frage eine kurze Erklärung. Nur Inhalte aus der Mitschrift verwenden.' });
+          schema = { type: 'ARRAY', items: { type: 'OBJECT', properties: { frage: { type: 'STRING' }, antworten: { type: 'ARRAY', items: { type: 'STRING' } }, richtig: { type: 'INTEGER' }, erklaerung: { type: 'STRING' } }, required: ['frage', 'antworten', 'richtig'] } };
+        } else {
+          teile.unshift({ text: 'Erstelle aus dieser Schul-Mitschrift 8 bis 15 Karteikarten zum Lernen auf Deutsch: vorne eine kurze Frage oder ein Begriff, hinten die knappe Antwort (Formeln einfach schreiben). ' +
+            'Nur Inhalte aus der Mitschrift verwenden.' });
+          schema = { type: 'ARRAY', items: { type: 'OBJECT', properties: { vorne: { type: 'STRING' }, hinten: { type: 'STRING' } }, required: ['vorne', 'hinten'] } };
+        }
+        let daten = await window.Assistent.gemini({ teile: teile, schema: schema, warten: function () { fortschritt('Limit erreicht – kurz warten …'); } });
+        fortschritt(null);
+        daten = (Array.isArray(daten) ? daten : []).filter(function (x) {
+          return art === 'quiz' ? x && x.frage && Array.isArray(x.antworten) && x.antworten.length >= 2 && x.richtig >= 0 && x.richtig < x.antworten.length : x && x.vorne && x.hinten;
+        });
+        if (!daten.length) throw new Error('Die KI hat dazu nichts Brauchbares erstellt. Steht auf den Seiten schon genug?');
+        if (E !== ed) return;
+        const set = { id: uid(), art: art, titel: (art === 'quiz' ? 'Quiz' : 'Karteikarten') + ' · ' + name, erstellt: jetzt(), daten: daten };
+        E.buch.lernen = [set].concat(E.buch.lernen || []).slice(0, 12);
+        E.buch.metaG = jetzt(); E.buchGeaendert = true; buchSchmutzig();
+        lernenStarten(set);
+      } catch (e) { fortschritt(null); alert(e.message || e); }
+    });
+  }
+  function lernenListe(buch, ausEditor) {
+    const sets = buch.lernen || [];
+    const ov = document.createElement('div');
+    ov.className = 'nb-ki-blatt';
+    ov.innerHTML = '<div class="nb-ki-karte"><div class="nb-ki-kopf"><span class="nb-ki-logo">' + icon('funke') + '</span><b>Lernen · ' + esc(buch.titel) + '</b>' +
+      '<button class="nb-knopf" data-ki-zu aria-label="Schließen">' + icon('schliessen') + '</button></div><div class="nb-ki-text">' +
+      (sets.length ? sets.map(function (s, i) {
+        return '<div class="nb-lernset"><span class="nb-lernset-art">' + (s.art === 'quiz' ? 'Quiz' : 'Karten') + '</span><div><b>' + esc(s.titel) + '</b><small>' + s.daten.length +
+          (s.art === 'quiz' ? ' Fragen' : ' Karten') + ' · ' + datumText(s.erstellt) + '</small></div><button class="btn btn-klein btn-primary" data-l="' + i + '">Üben</button>' +
+          '<button class="btn btn-klein" data-lw="' + i + '" aria-label="Löschen">' + icon('loeschen') + '</button></div>';
+      }).join('') : '<p>Noch nichts zum Lernen da.' + (ausEditor ? '' : ' Öffne das Notizbuch und wähle im Menü ⋯ „Karteikarten erstellen“ oder „Quiz erstellen“.') + '</p>') +
+      '</div>' + (ausEditor ? '<div class="nb-ki-fuss"><button class="btn btn-primary" data-neu="karten">Neue Karteikarten</button><button class="btn" data-neu="quiz">Neues Quiz</button></div>' : '') + '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', async function (e) {
+      if (e.target === ov || e.target.closest('[data-ki-zu]')) { ov.remove(); return; }
+      const u = e.target.closest('[data-l]');
+      if (u) { ov.remove(); lernenStarten(sets[Number(u.getAttribute('data-l'))]); return; }
+      const w = e.target.closest('[data-lw]');
+      if (w && confirm('Dieses Lernset löschen?')) {
+        buch.lernen = sets.filter(function (x, i) { return i !== Number(w.getAttribute('data-lw')); });
+        buch.metaG = jetzt(); buch.geaendert = jetzt();
+        if (E && E.buch === buch) { E.buchGeaendert = true; buchSchmutzig(); } else await buchSpeichern(buch);
+        ov.remove(); lernenListe(buch, ausEditor); return;
+      }
+      const n = e.target.closest('[data-neu]');
+      if (n) { ov.remove(); lernenErstellen(n.getAttribute('data-neu')); }
+    });
+  }
+  function lernenStarten(set) {
+    const ov = document.createElement('div');
+    ov.className = 'nb-ki-blatt nb-lernen';
+    document.body.appendChild(ov);
+    const quiz = set.art === 'quiz';
+    let reihe = set.daten.map(function (x, i) { return i; }), pos = 0, umgedreht = false, gewusst = 0, nochmal = [], gewaehlt = -1, punkte = 0;
+    function zeichnen() {
+      const fertig = pos >= reihe.length;
+      let h = '<div class="nb-ki-karte"><div class="nb-ki-kopf"><span class="nb-ki-logo">' + icon('funke') + '</span><b>' + esc(set.titel) + '</b>' +
+        '<span class="nb-lern-stand">' + (fertig ? '' : (pos + 1) + ' / ' + reihe.length) + '</span>' +
+        '<button class="nb-knopf" data-ki-zu aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
+        '<div class="nb-lern-balken"><i style="width:' + Math.round(Math.min(pos, reihe.length) / reihe.length * 100) + '%"></i></div>';
+      if (fertig) {
+        h += '<div class="nb-lern-ende"><div class="nb-lern-gross">' + (quiz ? punkte + ' / ' + reihe.length : gewusst + ' / ' + reihe.length) + '</div>' +
+          '<p>' + (quiz ? (punkte === reihe.length ? 'Alles richtig – stark!' : 'richtig beantwortet') : (nochmal.length ? (nochmal.length === 1 ? '1 Karte solltest du nochmal üben.' : nochmal.length + ' Karten solltest du nochmal üben.') : 'Alles gewusst – super!')) + '</p>' +
+          '<div class="nb-ki-fuss">' + (!quiz && nochmal.length ? '<button class="btn btn-primary" data-x="nochmal">Nur die schwierigen nochmal</button>' : '') +
+          '<button class="btn' + (quiz || !nochmal.length ? ' btn-primary' : '') + '" data-x="neu">Von vorne</button><button class="btn" data-ki-zu>Fertig</button></div></div>';
+      } else if (quiz) {
+        const f = set.daten[reihe[pos]];
+        h += '<div class="nb-quiz"><div class="nb-quiz-frage">' + esc(f.frage) + '</div>' +
+          f.antworten.map(function (a, i) {
+            let k = '';
+            if (gewaehlt >= 0) k = i === f.richtig ? ' richtig' : (i === gewaehlt ? ' falsch' : ' aus');
+            return '<button class="nb-quiz-antwort' + k + '" data-a="' + i + '"' + (gewaehlt >= 0 ? ' disabled' : '') + '><span>' + 'ABCD'[i] + '</span>' + esc(a) + '</button>';
+          }).join('') +
+          (gewaehlt >= 0 ? '<div class="nb-quiz-erkl">' + (gewaehlt === f.richtig ? '<b>Richtig!</b> ' : '<b>Leider falsch.</b> ') + esc(f.erklaerung || '') + '</div>' +
+            '<div class="nb-ki-fuss"><button class="btn btn-primary" data-x="weiter">' + (pos + 1 < reihe.length ? 'Weiter' : 'Ergebnis') + '</button></div>' : '') + '</div>';
+      } else {
+        const k = set.daten[reihe[pos]];
+        h += '<button class="nb-karte' + (umgedreht ? ' um' : '') + '" data-x="drehen"><span class="nb-karte-seite nb-vorne"><small>Frage</small>' + esc(k.vorne) + '</span>' +
+          '<span class="nb-karte-seite nb-hinten"><small>Antwort</small>' + esc(k.hinten) + '</span></button>' +
+          '<div class="nb-ki-fuss nb-karten-knoepfe">' + (umgedreht ? '<button class="btn" data-x="nochmal1">Nochmal</button><button class="btn btn-primary" data-x="gewusst">Gewusst</button>'
+            : '<button class="btn btn-primary" data-x="drehen">Antwort zeigen</button>') + '</div>';
+      }
+      ov.innerHTML = h + '</div>';
+    }
+    ov.addEventListener('click', function (e) {
+      if (e.target === ov || e.target.closest('[data-ki-zu]')) { ov.remove(); return; }
+      const a = e.target.closest('[data-a]');
+      if (a && gewaehlt < 0) { gewaehlt = Number(a.getAttribute('data-a')); if (gewaehlt === set.daten[reihe[pos]].richtig) punkte++; zeichnen(); return; }
+      const x = e.target.closest('[data-x]');
+      if (!x) return;
+      const t = x.getAttribute('data-x');
+      if (t === 'drehen') umgedreht = !umgedreht;
+      else if (t === 'gewusst') { gewusst++; pos++; umgedreht = false; }
+      else if (t === 'nochmal1') { nochmal.push(reihe[pos]); pos++; umgedreht = false; }
+      else if (t === 'weiter') { pos++; gewaehlt = -1; }
+      else if (t === 'nochmal') { reihe = nochmal.slice(); nochmal = []; pos = 0; gewusst = 0; }
+      else if (t === 'neu') { reihe = set.daten.map(function (q, i) { return i; }); nochmal = []; pos = 0; gewusst = 0; punkte = 0; gewaehlt = -1; }
+      zeichnen();
+    });
+    ov.tabIndex = -1;
+    ov.addEventListener('keydown', function (e) {
+      e.stopPropagation();
+      if (e.key === 'Escape') ov.remove();
+      if (e.key === ' ' && !quiz) { e.preventDefault(); umgedreht = !umgedreht; zeichnen(); }
+    });
+    zeichnen();
+    try { ov.focus(); } catch (e) { }
   }
 
   /* ============================================================
@@ -2413,7 +3223,7 @@
   function fingerabdruck(x) {
     if (!x) return '';
     const b = x.buch, weg = b.weg || {};
-    return JSON.stringify([b.titel, b.modul_id || null, b.cover, b.vorlage, b.papier, b.metaG || 0, x.seiten.map(function (s) { return s.id + ':' + seitenZeit(s); }),
+    return JSON.stringify([b.titel, b.modul_id || null, b.cover, b.vorlage, b.papier, b.format || 'a4', b.ordner || '', (b.lernen || []).length, b.metaG || 0, x.seiten.map(function (s) { return s.id + ':' + seitenZeit(s); }),
       Object.keys(weg).sort().map(function (k) { return k + ':' + weg[k]; })]);
   }
   /* Zwei Fassungen eines Notizbuchs vereinen: pro Seite gewinnt die zuletzt bearbeitete */
@@ -2442,6 +3252,7 @@
     const meta = (lb.metaG || lb.erstellt || 0) >= (rb.metaG || rb.erstellt || 0) ? lb : rb;
     const buch = Object.assign({}, lb, {
       titel: meta.titel, modul_id: meta.modul_id || null, cover: meta.cover, vorlage: meta.vorlage, papier: meta.papier, metaG: meta.metaG || 0,
+      format: meta.format || 'a4', ordner: meta.ordner || '', lernen: meta.lernen || [],
       weg: weg, geaendert: Math.max(lb.geaendert || 0, rb.geaendert || 0), erstellt: Math.min(lb.erstellt || jetzt(), rb.erstellt || jetzt())
     });
     let liste = reihe.map(function (id) { return seiten.get(id); });
@@ -2901,27 +3712,97 @@
         '<button class="btn btn-primary" data-nb-neu="">Erstes Notizbuch anlegen</button></div>';
       return;
     }
-    const module = K ? K.module() : [];
-    const vorhanden = new Set(buecher.map(function (b) { return b.modul_id && K && K.modulVon(b.modul_id) ? b.modul_id : '__ohne__'; }));
-    if (filterModul !== 'alle' && !vorhanden.has(filterModul)) filterModul = 'alle';
-    let chips = '<button class="nb-chip' + (filterModul === 'alle' ? ' aktiv' : '') + '" data-nb-filter="alle">Alle <span>' + buecher.length + '</span></button>';
-    module.forEach(function (m) {
-      if (!vorhanden.has(m.id)) return;
-      const n = buecher.filter(function (b) { return b.modul_id === m.id; }).length;
-      chips += '<button class="nb-chip' + (filterModul === m.id ? ' aktiv' : '') + '" data-nb-filter="' + m.id + '"><span class="mod-punkt" style="background:' + m.farbe + '"></span>' + esc(m.name) + ' <span>' + n + '</span></button>';
-    });
-    if (vorhanden.has('__ohne__')) chips += '<button class="nb-chip' + (filterModul === '__ohne__' ? ' aktiv' : '') + '" data-nb-filter="__ohne__">Ohne Modul</button>';
-    const liste = sortiert(buecher.filter(function (b) {
-      if (filterModul === 'alle') return true;
-      if (filterModul === '__ohne__') return !(b.modul_id && K && K.modulVon(b.modul_id));
-      return b.modul_id === filterModul;
-    }));
     const cfgA = driveCfg();
-    el.innerHTML = '<div class="nb-filter">' + chips + '</div>' +
-      (cfgA.clientId ? '<div class="nb-stand">Zuletzt mit Google Drive abgeglichen: ' + zeitText(cfgA.zuletzt) + '</div>' : '') + '<div class="nb-gitter">' +
-      '<div class="nb-buch nb-neu-karte" data-nb-neu="' + (filterModul !== 'alle' && filterModul !== '__ohne__' ? filterModul : '') + '"><div class="nb-cover"><span>+</span></div>' +
-      '<div class="nb-info"><div class="nb-titel">Neues Notizbuch</div></div></div>' +
-      liste.map(function (b) { return coverHTML(b); }).join('') + '</div>';
+    let kopf = '<div class="nb-bibkopf"><div class="nb-segment nb-bibmodus">' +
+      '<button class="' + (bibModus === 'faecher' ? 'aktiv' : '') + '" data-nb-ansicht="faecher">Nach Fach</button>' +
+      '<button class="' + (bibModus === 'ordner' ? 'aktiv' : '') + '" data-nb-ansicht="ordner">Ordner</button></div>' +
+      '<label class="nb-suchfeld">' + icon('suche') + '<input type="search" data-nb-suche placeholder="In Mitschriften suchen …" value="' + esc(suchText) + '"></label></div>' +
+      (cfgA.clientId ? '<div class="nb-stand">Zuletzt mit Google Drive abgeglichen: ' + zeitText(cfgA.zuletzt) + '</div>' : '');
+    const neuKarte = function (attr) {
+      return '<div class="nb-buch nb-neu-karte" ' + attr + '><div class="nb-cover"><span>+</span></div><div class="nb-info"><div class="nb-titel">Neues Notizbuch</div></div></div>';
+    };
+    let inhalt = '';
+    if (bibModus === 'ordner') {
+      const ordner = ordnerListe();
+      if (ordnerOffen !== null && ordnerOffen !== '' && !ordner.includes(ordnerOffen) && !leereOrdner.has(ordnerOffen)) ordnerOffen = null;
+      if (ordnerOffen === null) {
+        const lose = sortiert(buecher.filter(function (b) { return !b.ordner; }));
+        const alle = ordner.concat(Array.from(leereOrdner).filter(function (o) { return !ordner.includes(o); }));
+        inhalt = '<div class="nb-ordnerleiste"><span>' + alle.length + (alle.length === 1 ? ' Ordner' : ' Ordner') + '</span><button class="btn btn-klein" data-nb-ordnerneu>+ Neuer Ordner</button></div>' +
+          '<div class="nb-gitter">' + neuKarte('data-nb-neu=""') + alle.map(ordnerHTML).join('') + lose.map(function (b) { return coverHTML(b); }).join('') + '</div>';
+      } else {
+        const drin = sortiert(buecher.filter(function (b) { return b.ordner === ordnerOffen; }));
+        inhalt = '<div class="nb-ordnerkopf"><button class="zurueck" data-nb-ordnerzurueck>‹ Alle Ordner</button>' +
+          '<div class="nb-ordnertitel">' + icon('ordner') + '<b>' + esc(ordnerOffen) + '</b><span>' + drin.length + (drin.length === 1 ? ' Notizbuch' : ' Notizbücher') + '</span></div>' +
+          '<div class="nb-ordneraktionen"><button class="btn btn-klein" data-nb-ordnerhinzu>Notizbücher hinzufügen</button>' +
+          '<button class="btn btn-klein" data-nb-ordnerumbenennen>Umbenennen</button><button class="btn btn-klein" data-nb-ordneraufloesen>Ordner auflösen</button></div></div>' +
+          '<div class="nb-gitter">' + neuKarte('data-nb-neu=""') + drin.map(function (b) { return coverHTML(b); }).join('') + '</div>' +
+          (drin.length ? '' : '<div class="leer">Dieser Ordner ist noch leer. Leg hier ein Notizbuch an oder füge vorhandene hinzu.</div>');
+      }
+    } else {
+      const module = K ? K.module() : [];
+      const vorhanden = new Set(buecher.map(function (b) { return b.modul_id && K && K.modulVon(b.modul_id) ? b.modul_id : '__ohne__'; }));
+      if (filterModul !== 'alle' && !vorhanden.has(filterModul)) filterModul = 'alle';
+      let chips = '<button class="nb-chip' + (filterModul === 'alle' ? ' aktiv' : '') + '" data-nb-filter="alle">Alle <span>' + buecher.length + '</span></button>';
+      module.forEach(function (m) {
+        if (!vorhanden.has(m.id)) return;
+        const n = buecher.filter(function (b) { return b.modul_id === m.id; }).length;
+        chips += '<button class="nb-chip' + (filterModul === m.id ? ' aktiv' : '') + '" data-nb-filter="' + m.id + '"><span class="mod-punkt" style="background:' + m.farbe + '"></span>' + esc(m.name) + ' <span>' + n + '</span></button>';
+      });
+      if (vorhanden.has('__ohne__')) chips += '<button class="nb-chip' + (filterModul === '__ohne__' ? ' aktiv' : '') + '" data-nb-filter="__ohne__">Ohne Modul</button>';
+      const liste = sortiert(buecher.filter(function (b) {
+        if (filterModul === 'alle') return true;
+        if (filterModul === '__ohne__') return !(b.modul_id && K && K.modulVon(b.modul_id));
+        return b.modul_id === filterModul;
+      }));
+      inhalt = '<div class="nb-filter">' + chips + '</div><div class="nb-gitter">' +
+        neuKarte('data-nb-neu="' + (filterModul !== 'alle' && filterModul !== '__ohne__' ? filterModul : '') + '"') +
+        liste.map(function (b) { return coverHTML(b); }).join('') + '</div>';
+    }
+    el.innerHTML = kopf + '<div class="nb-suchergebnis" hidden></div><div class="nb-bibinhalt">' + inhalt + '</div>';
+    const feld = el.querySelector('[data-nb-suche]');
+    feld.addEventListener('input', function () { suchText = feld.value; sucheZeigen(el); });
+    feld.addEventListener('keydown', function (e) { if (e.key === 'Escape') { feld.value = ''; suchText = ''; sucheZeigen(el); } });
+    if (suchText) sucheZeigen(el);
+  }
+  const leereOrdner = new Set();
+  function ordnerHTML(name) {
+    const drin = buecher.filter(function (b) { return b.ordner === name; });
+    const farben = drin.slice(0, 3).map(function (b) { const c = COVER[b.cover] || COVER[0]; return '<i style="--c1:' + c[0] + ';--c2:' + c[1] + '"></i>'; }).join('');
+    return '<div class="nb-buch nb-ordner" data-nb-ordner="' + esc(name) + '"><div class="nb-ordner-bild"><div class="nb-ordner-hinten"></div><div class="nb-ordner-buecher">' + farben + '</div><div class="nb-ordner-vorne"></div></div>' +
+      '<div class="nb-info"><div class="nb-titel">' + esc(name) + '</div><div class="nb-meta nb-meta2">' + drin.length + (drin.length === 1 ? ' Notizbuch' : ' Notizbücher') + '</div></div></div>';
+  }
+  async function ordnerUmbenennen(alt, neu) {
+    neu = String(neu || '').trim();
+    const liste = buecher.filter(function (b) { return b.ordner === alt; });
+    for (const b of liste) { b.ordner = neu; b.metaG = jetzt(); b.geaendert = jetzt(); await buchSpeichern(b); }
+    leereOrdner.delete(alt);
+    if (neu && !liste.length) leereOrdner.add(neu);
+    ordnerOffen = neu || null;
+    if (K) K.neuZeichnen();
+  }
+  function ordnerHinzufuegenDialog(name) {
+    const kandidaten = sortiert(buecher.filter(function (b) { return b.ordner !== name; }));
+    if (!kandidaten.length) { alert('Alle Notizbücher sind schon in diesem Ordner.'); return; }
+    const d = document.createElement('dialog');
+    d.className = 'nb-wahl';
+    d.innerHTML = '<div class="dlg-koerper"><h3 class="nb-dlg-titel">In „' + esc(name) + '“ verschieben</h3><div class="nb-hakenliste">' +
+      kandidaten.map(function (b) {
+        const c = COVER[b.cover] || COVER[0];
+        return '<label><input type="checkbox" value="' + b.id + '"><span class="nb-mini-cover" style="--c1:' + c[0] + ';--c2:' + c[1] + '"></span><span>' + esc(b.titel) +
+          '<small>' + esc(b.ordner ? 'aus „' + b.ordner + '“' : modulInfo(b.modul_id).name) + '</small></span></label>';
+      }).join('') + '</div><div class="nb-wahl-knoepfe"><button class="btn btn-primary" data-ok>Verschieben</button><button class="btn" data-ab>Abbrechen</button></div></div>';
+    document.body.appendChild(d);
+    d.addEventListener('close', function () { d.remove(); });
+    d.querySelector('[data-ab]').addEventListener('click', function () { d.close(); });
+    d.querySelector('[data-ok]').addEventListener('click', async function () {
+      const ids = $$(d, 'input:checked').map(function (x) { return x.value; });
+      d.close();
+      for (const id of ids) { const b = buecher.find(function (x) { return x.id === id; }); if (b) { b.ordner = name; b.metaG = jetzt(); b.geaendert = jetzt(); await buchSpeichern(b); } }
+      leereOrdner.delete(name);
+      if (K) K.neuZeichnen();
+    });
+    d.showModal();
   }
   function coverMuster() {
     return [2, 0, 6].map(function (c, i) {
@@ -3000,7 +3881,10 @@
         '<h3 class="nb-dlg-titel">Neues Notizbuch</h3>' +
         '<div class="feld"><label for="nbTitel">Name</label><input id="nbTitel" type="text" maxlength="80" placeholder="z. B. Mathe Mitschrift"></div>' +
         '<div class="feld"><label for="nbModul">Modul</label><select id="nbModul"></select></div>' +
+        '<div class="feld"><label for="nbOrdner">Ordner <span class="nb-optional">(optional, z. B. Schuljahr 2026/27)</span></label>' +
+          '<input id="nbOrdner" type="text" maxlength="60" list="nbOrdnerListe" placeholder="Kein Ordner"><datalist id="nbOrdnerListe"></datalist></div>' +
         '<div class="feld"><label>Cover</label><div class="nb-farbwahl" id="nbCover"></div></div>' +
+        '<div class="feld"><label id="nbFormatLabel">Format</label><div class="nb-formatwahl" id="nbFormat"></div></div>' +
         '<div class="feld nb-nur-neu"><label>Papier</label><div class="nb-vorlagen" id="nbVorlage"></div></div>' +
         '<div class="feld nb-nur-neu"><label>Papierfarbe</label><div class="nb-papierwahl" id="nbPapier"></div></div>' +
         '<div class="feld nb-nur-neu"><button class="btn btn-klein" id="nbPdfWahl" type="button">Aus PDF erstellen …</button> <span class="nb-hinweistext" id="nbPdfName"></span>' +
@@ -3008,6 +3892,7 @@
       '</div>' +
       '<div class="dlg-fuss"><button class="btn btn-danger" id="nbLoeschen" type="button">Löschen</button>' +
         '<button class="btn" id="nbExport" type="button">Als PDF</button>' +
+        '<button class="btn" id="nbLernen" type="button">Lernen</button>' +
         '<div class="rechts"><button class="btn" id="nbAbbrechen" type="button">Abbrechen</button><button class="btn btn-primary" id="nbSpeichern" type="button">Erstellen</button></div></div>';
     document.body.appendChild(dlg);
     const q = function (s) { return dlg.querySelector(s); };
@@ -3018,6 +3903,10 @@
     q('#nbVorlage').addEventListener('click', function (e) {
       const b = e.target.closest('[data-v]'); if (!b) return;
       dlgZustand.vorlage = b.getAttribute('data-v'); dialogAuswahlZeigen();
+    });
+    q('#nbFormat').addEventListener('click', function (e) {
+      const b = e.target.closest('[data-f]'); if (!b) return;
+      dlgZustand.format = b.getAttribute('data-f'); dialogAuswahlZeigen();
     });
     q('#nbPapier').addEventListener('click', function (e) {
       const b = e.target.closest('[data-p]'); if (!b) return;
@@ -3041,6 +3930,11 @@
       try { await buchLoeschen(b.id); } catch (e) { alert('Löschen fehlgeschlagen: ' + e.message); }
       if (K) K.neuZeichnen();
     });
+    q('#nbLernen').addEventListener('click', function () {
+      const b = buecher.find(function (x) { return x.id === dlgZustand.id; });
+      dlg.close();
+      if (b) lernenListe(b, false);
+    });
     q('#nbExport').addEventListener('click', function () {
       const b = buecher.find(function (x) { return x.id === dlgZustand.id; });
       dlg.close();
@@ -3056,6 +3950,9 @@
     dlg.querySelector('#nbVorlage').innerHTML = VORLAGEN.map(function (v) {
       return '<button type="button" data-v="' + v[0] + '" class="' + (z.vorlage === v[0] ? 'aktiv' : '') + '"><span class="nb-vl nb-vl-' + v[0] + '" style="background-color:' + PAPIER[z.papier] + '"></span>' + v[1] + '</button>';
     }).join('');
+    dlg.querySelector('#nbFormat').innerHTML = [['a4', 'A4', '21 × 29,7 cm'], ['a5', 'A5', '14,8 × 21 cm']].map(function (f) {
+      return '<button type="button" data-f="' + f[0] + '" class="' + (z.format === f[0] ? 'aktiv' : '') + '"><span class="nb-format-bild nb-format-' + f[0] + '"></span><b>' + f[1] + '</b><small>' + f[2] + '</small></button>';
+    }).join('');
     dlg.querySelector('#nbPapier').innerHTML = [['weiss', 'Weiß'], ['creme', 'Creme']].map(function (p) {
       return '<button type="button" data-p="' + p[0] + '" class="' + (z.papier === p[0] ? 'aktiv' : '') + '"><span style="background:' + PAPIER[p[0]] + '"></span>' + p[1] + '</button>';
     }).join('');
@@ -3063,8 +3960,11 @@
   function dialogOeffnen(id, vorgabeModul) {
     dialogBauen();
     const b = id ? buecher.find(function (x) { return x.id === id; }) : null;
-    dlgZustand = b ? { id: b.id, cover: b.cover || 0, vorlage: b.vorlage, papier: b.papier, pdf: null }
-      : { id: null, cover: Math.floor(Math.random() * 8), vorlage: 'liniert', papier: 'weiss', pdf: null };
+    dlgZustand = b ? { id: b.id, cover: b.cover || 0, vorlage: b.vorlage, papier: b.papier, format: b.format || 'a4', pdf: null }
+      : { id: null, cover: Math.floor(Math.random() * 8), vorlage: 'liniert', papier: 'weiss', format: W.format || 'a4', pdf: null };
+    dlg.querySelector('#nbOrdner').value = b ? (b.ordner || '') : (ordnerOffen && ordnerOffen !== '__ohne__' ? ordnerOffen : '');
+    dlg.querySelector('#nbOrdnerListe').innerHTML = ordnerListe().map(function (o) { return '<option value="' + esc(o) + '"></option>'; }).join('');
+    dlg.querySelector('#nbFormatLabel').textContent = b ? 'Format für neue Seiten' : 'Format';
     dlg.querySelector('.nb-dlg-titel').textContent = b ? 'Notizbuch bearbeiten' : 'Neues Notizbuch';
     dlg.querySelector('#nbTitel').value = b ? b.titel : '';
     const module = K ? K.module() : [];
@@ -3081,6 +3981,7 @@
     $$(dlg, '.nb-nur-neu').forEach(function (x) { x.style.display = b ? 'none' : ''; });
     dlg.querySelector('#nbLoeschen').style.display = b ? '' : 'none';
     dlg.querySelector('#nbExport').style.display = b ? '' : 'none';
+    dlg.querySelector('#nbLernen').style.display = b && (b.lernen || []).length ? '' : 'none';
     dlg.querySelector('#nbSpeichern').textContent = b ? 'Speichern' : 'Erstellen';
     dialogAuswahlZeigen();
     if (K && K.auswahlAufbereiten) K.auswahlAufbereiten(dlg);
@@ -3098,6 +3999,7 @@
       const b = buecher.find(function (x) { return x.id === z.id; });
       if (b) {
         b.titel = titel; b.modul_id = modul; b.cover = z.cover; b.geaendert = jetzt(); b.metaG = jetzt();
+        b.format = z.format; b.ordner = dlg.querySelector('#nbOrdner').value.trim();
         try { await buchSpeichern(b); } catch (e) { alert('Speichern fehlgeschlagen: ' + e.message); return; }
       }
       dlg.close();
@@ -3105,7 +4007,8 @@
       return;
     }
     dlg.close();
-    const daten = { titel: titel, modul_id: modul, cover: z.cover, vorlage: z.vorlage, papier: z.papier };
+    const daten = { titel: titel, modul_id: modul, cover: z.cover, vorlage: z.vorlage, papier: z.papier, format: z.format, ordner: dlg.querySelector('#nbOrdner').value.trim() };
+    W.format = z.format; werkzeugSpeichern();
     try {
       const b = z.pdf ? await buchAusPdf(daten, z.pdf) : await buchAnlegen(daten);
       if (K) K.neuZeichnen();
@@ -3115,8 +4018,37 @@
 
   /* ---------- Klicks in der App ---------- */
   function appKlick(ev) {
-    const el = ev.target.closest && ev.target.closest('[data-nb-mehr],[data-nb-neu],[data-nb-oeffnen],[data-nb-filter],[data-nb-sichern],[data-nb-laden],[data-nb-abgleich],[data-nb-drive],[data-nb-dateiabgleich],[data-nb-dateiwechsel],[data-nb-trennen]');
+    const el = ev.target.closest && ev.target.closest('[data-nb-mehr],[data-nb-neu],[data-nb-oeffnen],[data-nb-filter],[data-nb-sichern],[data-nb-laden],[data-nb-abgleich],[data-nb-drive],[data-nb-dateiabgleich],[data-nb-dateiwechsel],[data-nb-trennen],' +
+      '[data-nb-ansicht],[data-nb-ordner],[data-nb-ordnerzurueck],[data-nb-ordnerneu],[data-nb-ordnerumbenennen],[data-nb-ordneraufloesen],[data-nb-ordnerhinzu],[data-nb-treffer]');
     if (!el || (E && E.el.root.contains(el))) return;
+    if (el.hasAttribute('data-nb-ansicht')) {
+      bibModus = el.getAttribute('data-nb-ansicht'); ordnerOffen = null;
+      try { localStorage.setItem('schulplaner.notizen.ansicht', bibModus); } catch (e) { }
+      if (K) K.neuZeichnen(); return;
+    }
+    if (el.hasAttribute('data-nb-ordner')) { ordnerOffen = el.getAttribute('data-nb-ordner'); if (K) K.neuZeichnen(); return; }
+    if (el.hasAttribute('data-nb-ordnerzurueck')) { ordnerOffen = null; if (K) K.neuZeichnen(); return; }
+    if (el.hasAttribute('data-nb-ordnerneu')) {
+      const n = (prompt('Name des neuen Ordners (z. B. Schuljahr 2026/27 oder 4AHIT):') || '').trim();
+      if (!n) return;
+      leereOrdner.add(n); ordnerOffen = n; if (K) K.neuZeichnen(); return;
+    }
+    if (el.hasAttribute('data-nb-ordnerumbenennen')) {
+      const n = prompt('Neuer Name für den Ordner:', ordnerOffen);
+      if (n === null || !n.trim() || n.trim() === ordnerOffen) return;
+      ordnerUmbenennen(ordnerOffen, n); return;
+    }
+    if (el.hasAttribute('data-nb-ordneraufloesen')) {
+      const anzahl = buecher.filter(function (b) { return b.ordner === ordnerOffen; }).length;
+      if (anzahl && !confirm('Ordner „' + ordnerOffen + '“ auflösen? Die ' + anzahl + (anzahl === 1 ? ' Notizbuch bleibt' : ' Notizbücher bleiben') + ' erhalten.')) return;
+      leereOrdner.delete(ordnerOffen);
+      ordnerUmbenennen(ordnerOffen, ''); return;
+    }
+    if (el.hasAttribute('data-nb-ordnerhinzu')) { ordnerHinzufuegenDialog(ordnerOffen); return; }
+    if (el.hasAttribute('data-nb-treffer')) {
+      const t = el.getAttribute('data-nb-treffer').split('|');
+      oeffnen(t[0], Number(t[1])); return;
+    }
     if (el.hasAttribute('data-nb-abgleich') || el.hasAttribute('data-nb-drive')) {
       const f = document.getElementById('nbClientId');
       if (f && f.value.trim() !== (driveCfg().clientId || '')) { f.dispatchEvent(new Event('change')); }
@@ -3320,6 +4252,131 @@ body>.nb-fortschritt{position:fixed;z-index:120}
 .nb-ueb-fuss button:hover{color:var(--danger);background:rgba(255,59,48,.1)}
 .nb-ueb-fuss svg{width:18px;height:18px}
 .nb-stand{font-size:12.5px;color:var(--muted2);margin:10px 2px 0}
+/* KI-Blätter: Zusammenfassung, Lernen, Quiz */
+.nb-ki-menue{display:flex!important;align-items:center;gap:8px}
+.nb-ki-menue svg{width:16px;height:16px;color:#6B5BFF;flex:0 0 16px}
+.nb-ki-blatt{position:fixed;inset:0;z-index:130;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,18,40,.35);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);font-family:inherit;color:var(--text)}
+.nb-ki-karte{width:min(640px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column;border-radius:24px;border:1px solid var(--kante);overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.6),rgba(255,255,255,0) 30%),rgba(247,248,253,.97);box-shadow:0 30px 80px rgba(20,25,60,.35)}
+:root[data-thema="dunkel"] .nb-ki-karte{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 30%),rgba(28,30,50,.98)}
+.nb-ki-kopf{display:flex;align-items:center;gap:10px;padding:14px 10px 12px 16px;border-bottom:1px solid var(--kante)}
+.nb-ki-kopf b{flex:1;font-size:16px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nb-ki-logo{width:30px;height:30px;border-radius:10px;padding:6px;color:#fff;background:linear-gradient(140deg,#8E6BFF,#3E7BFF 55%,#22B8E8);flex:0 0 30px}
+.nb-ki-logo svg{width:100%;height:100%;display:block;fill:currentColor;stroke:none}
+.nb-ki-text{padding:14px 20px;overflow-y:auto;font-size:15px;line-height:1.55;-webkit-user-select:text;user-select:text}
+.nb-ki-text h4{margin:14px 0 6px;font-size:15px} .nb-ki-text p{margin:0 0 8px} .nb-ki-text ul{margin:4px 0 10px;padding-left:22px} .nb-ki-text li{margin:3px 0}
+.nb-ki-fuss{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--kante)}
+.nb-ki-hinweis{font-size:12px;color:var(--muted2);margin-left:auto}
+.nb-lernset{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--kante)}
+.nb-lernset>div{flex:1;min-width:0} .nb-lernset b{display:block;font-size:14.5px} .nb-lernset small{color:var(--muted);font-size:12.5px}
+.nb-lernset-art{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B5BFF;background:rgba(107,91,255,.12);padding:4px 8px;border-radius:8px}
+.nb-lernset .btn svg{width:16px;height:16px}
+.nb-lern-stand{font-size:13px;color:var(--muted);font-weight:600}
+.nb-lern-balken{height:4px;background:rgba(127,127,140,.15)} .nb-lern-balken i{display:block;height:100%;background:linear-gradient(90deg,#8E6BFF,#3E7BFF);transition:width .25s ease}
+.nb-karte{position:relative;display:block;margin:22px auto 8px;width:calc(100% - 40px);min-height:240px;border:0;padding:0;background:none;cursor:pointer;perspective:1200px;color:var(--text);font:inherit}
+.nb-karte-seite{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;border-radius:20px;text-align:center;font-size:19px;line-height:1.45;font-weight:600;
+  background:#fff;border:1px solid var(--kante);box-shadow:0 12px 30px rgba(20,25,60,.14);backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:transform .45s cubic-bezier(.3,.7,.2,1);white-space:pre-wrap}
+:root[data-thema="dunkel"] .nb-karte-seite{background:#2A2D48}
+.nb-karte-seite small{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.nb-hinten{transform:rotateY(180deg);background:linear-gradient(160deg,#F4F1FF,#E9F3FF)}
+:root[data-thema="dunkel"] .nb-hinten{background:linear-gradient(160deg,#35305A,#25344F)}
+.nb-karte.um .nb-vorne{transform:rotateY(-180deg)} .nb-karte.um .nb-hinten{transform:rotateY(0)}
+.nb-karten-knoepfe{justify-content:center;border-top:0}
+.nb-karten-knoepfe .btn{min-width:130px;justify-content:center}
+.nb-quiz{padding:16px 20px;overflow-y:auto}
+.nb-quiz-frage{font-size:18px;font-weight:650;line-height:1.4;margin-bottom:14px}
+.nb-quiz-antwort{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin:0 0 8px;padding:12px 14px;border-radius:14px;border:1px solid var(--kante);background:rgba(255,255,255,.7);color:var(--text);font:inherit;font-size:15px;cursor:pointer}
+:root[data-thema="dunkel"] .nb-quiz-antwort{background:rgba(255,255,255,.06)}
+.nb-quiz-antwort span{width:26px;height:26px;flex:0 0 26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;background:rgba(127,127,140,.15)}
+.nb-quiz-antwort:hover:not(:disabled){border-color:var(--accent)}
+.nb-quiz-antwort.richtig{border-color:#34C759;background:rgba(52,199,89,.15)} .nb-quiz-antwort.richtig span{background:#34C759;color:#fff}
+.nb-quiz-antwort.falsch{border-color:#FF3B30;background:rgba(255,59,48,.12)} .nb-quiz-antwort.falsch span{background:#FF3B30;color:#fff}
+.nb-quiz-antwort.aus{opacity:.55}
+.nb-quiz-erkl{margin:10px 0 4px;padding:12px 14px;border-radius:14px;background:rgba(10,122,255,.08);font-size:14.5px;line-height:1.5}
+.nb-quiz .nb-ki-fuss{border-top:0;padding-left:0;padding-right:0}
+.nb-lern-ende{padding:30px 20px 4px;text-align:center}
+.nb-lern-gross{font-size:46px;font-weight:800;background:linear-gradient(140deg,#8E6BFF,#3E7BFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.nb-lern-ende p{color:var(--muted);margin:6px 0 16px}
+.nb-lern-ende .nb-ki-fuss{justify-content:center;border-top:0}
+@media (max-width:560px){.nb-ki-blatt{padding:0;align-items:stretch}.nb-ki-karte{max-height:none;border-radius:0;border:0;padding-top:env(safe-area-inset-top)}.nb-karte{min-height:300px}}
+/* Bibliothek: Kopf, Suche, Ordner */
+.nb-bibkopf{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}
+.nb-bibmodus{background:var(--glanz),var(--glas-stark);border-radius:12px}
+.nb-bibmodus button{padding:8px 14px}
+.nb-suchfeld{flex:1;min-width:200px;display:flex;align-items:center;gap:8px;padding:0 12px;border-radius:12px;border:1px solid var(--kante);background:var(--glanz),var(--glas-stark);box-shadow:var(--licht)}
+.nb-suchfeld svg{width:18px;height:18px;flex:0 0 18px;color:var(--muted)}
+.nb-suchfeld input{flex:1;min-width:0;border:0;outline:none;background:transparent;color:var(--text);font:inherit;font-size:16px;padding:9px 0}
+.nb-ordnerleiste{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 0;color:var(--muted);font-size:13.5px;font-weight:600}
+.nb-ordner .nb-ordner-bild{position:relative;aspect-ratio:3/4;display:flex;align-items:flex-end}
+.nb-ordner-hinten{position:absolute;left:0;right:0;bottom:0;height:78%;border-radius:10px 16px 16px 16px;background:linear-gradient(160deg,#7FB3FF,#3E7BFF)}
+.nb-ordner-hinten::before{content:"";position:absolute;left:0;top:-9%;width:44%;height:14%;border-radius:10px 10px 0 0;background:#6FA8FF}
+.nb-ordner-buecher{position:absolute;left:12%;right:12%;bottom:22%;height:62%;display:flex;gap:6%;align-items:flex-end;justify-content:center}
+.nb-ordner-buecher i{flex:1;max-width:30%;height:100%;border-radius:4px 7px 7px 4px;background:linear-gradient(150deg,var(--c1),var(--c2));box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.nb-ordner-buecher i:nth-child(2){height:88%} .nb-ordner-buecher i:nth-child(3){height:94%}
+.nb-ordner-vorne{position:absolute;left:0;right:0;bottom:0;height:52%;border-radius:12px 12px 16px 16px;background:linear-gradient(170deg,rgba(150,195,255,.96),rgba(62,123,255,.96));box-shadow:0 12px 26px rgba(20,60,160,.25),inset 0 1px 0 rgba(255,255,255,.45)}
+.nb-ordner:active .nb-ordner-bild{transform:scale(.97)}
+.nb-ordnerkopf{margin-top:14px}
+.nb-ordnertitel{display:flex;align-items:center;gap:10px;margin:8px 2px 10px}
+.nb-ordnertitel svg{width:26px;height:26px;color:var(--accent)}
+.nb-ordnertitel b{font-size:20px}
+.nb-ordnertitel span{color:var(--muted);font-size:13.5px}
+.nb-ordneraktionen{display:flex;gap:8px;flex-wrap:wrap}
+.nb-hakenliste{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow-y:auto;margin-bottom:14px}
+.nb-hakenliste label{display:flex;align-items:center;gap:12px;padding:8px 6px;border-radius:12px;cursor:pointer}
+.nb-hakenliste label:hover{background:rgba(127,127,140,.1)}
+.nb-hakenliste input{width:20px;height:20px;accent-color:var(--accent)}
+.nb-hakenliste span:last-child{display:flex;flex-direction:column;font-weight:600}
+.nb-hakenliste small{font-weight:400;color:var(--muted);font-size:12.5px}
+.nb-mini-cover{width:24px;height:32px;border-radius:3px 6px 6px 3px;background:linear-gradient(150deg,var(--c1),var(--c2));flex:0 0 24px}
+.nb-suchergebnis{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+.nb-treffer{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:16px;border:1px solid var(--kante);background:var(--glanz),var(--glas-stark);box-shadow:var(--licht);cursor:pointer;text-align:left;color:var(--text);font:inherit}
+.nb-treffer:hover{border-color:var(--accent)}
+.nb-treffer .nb-mini-cover{margin-top:2px}
+.nb-treffer b{display:block;font-size:14.5px}
+.nb-treffer small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.nb-treffer p{margin:6px 0 0;font-size:13.5px;line-height:1.45;color:var(--text)}
+.nb-treffer mark{background:rgba(255,214,10,.55);color:inherit;border-radius:3px;padding:0 2px}
+.nb-suchinfo{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted);padding:2px 2px 4px}
+/* Dialog: Format */
+.nb-formatwahl{display:flex;gap:10px}
+.nb-formatwahl button{display:flex;align-items:center;gap:10px;border:1px solid var(--kante);border-radius:12px;padding:8px 14px;background:rgba(255,255,255,.4);color:var(--text);font-size:13px}
+.nb-formatwahl button.aktiv{border-color:var(--accent);box-shadow:0 0 0 2px rgba(10,122,255,.25);color:var(--accent)}
+.nb-formatwahl b{font-size:15px}
+.nb-formatwahl small{color:var(--muted);font-size:12px}
+.nb-format-bild{display:block;background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);border-radius:2px}
+.nb-format-a4{width:21px;height:30px} .nb-format-a5{width:15px;height:21px}
+.nb-optional{font-weight:400;color:var(--muted2)}
+/* Editor: Lesezeichen, Lineal, Übersicht */
+.nb-lz-knopf.gesetzt{color:#FF3B30}
+.nb-lz-knopf.gesetzt svg path{fill:currentColor}
+.nb-lz-feld input{width:100%;box-sizing:border-box;border:1px solid var(--kante);border-radius:10px;padding:9px 11px;font:inherit;font-size:16px;background:rgba(255,255,255,.7);color:var(--text)}
+:root[data-thema="dunkel"] .nb-lz-feld input{background:rgba(255,255,255,.07)}
+.nb-lz-knoepfe{display:flex;gap:8px;margin:8px 0 4px}
+.nb-lz-eintrag{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.nb-lz-eintrag small{color:var(--muted);font-size:12px;white-space:nowrap}
+.nb-lz-eintrag.aktiv{background:rgba(10,122,255,.1)}
+.nb-lz-leer{font-size:13px;color:var(--muted);padding:4px 10px 8px;line-height:1.4}
+.nb-lineal{position:absolute;left:0;top:0;z-index:1;pointer-events:none;transform-origin:50% 50%;border-radius:8px;
+  background:linear-gradient(180deg,rgba(255,255,255,.55),rgba(220,226,240,.55));border:1px solid rgba(60,70,100,.35);
+  box-shadow:0 8px 24px rgba(20,30,70,.18);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+:root[data-thema="dunkel"] .nb-lineal{background:linear-gradient(180deg,rgba(90,96,130,.55),rgba(60,64,90,.55));border-color:rgba(255,255,255,.25)}
+.nb-lineal[hidden]{display:none}
+.nb-lineal-skala{position:absolute;left:0;right:0;top:0;height:20px;
+  background-image:linear-gradient(90deg,rgba(30,35,60,.75) 1px,transparent 1px),linear-gradient(90deg,rgba(30,35,60,.45) 1px,transparent 1px);
+  background-size:var(--cm) 18px,var(--mm) 9px;background-repeat:repeat-x;background-position:0 0}
+.nb-lineal-skala.nb-unten{top:auto;bottom:0;transform:scaleY(-1)}
+.nb-lineal.ohne-mm .nb-lineal-skala{background-size:var(--cm) 18px,0 0}
+.nb-lineal-grad{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:13px;font-weight:700;color:rgba(30,35,60,.8);background:rgba(255,255,255,.7);padding:2px 8px;border-radius:8px}
+:root[data-thema="dunkel"] .nb-lineal-grad{color:#fff;background:rgba(0,0,0,.35)}
+.nb-ueb-tipp{font-size:12.5px;color:var(--muted);padding:8px 16px 0}
+.nb-ueb-seite{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:pan-y}
+.nb-ueb-bild{position:relative}
+.nb-ueb-band{position:absolute;right:10%;top:0;width:12px;height:20px;background:#FF3B30;clip-path:polygon(0 0,100% 0,100% 100%,50% 75%,0 100%)}
+.nb-ueb-fuss{gap:2px}
+.nb-ueb-nr{margin-right:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.nb-ueb-fuss button:first-of-type:hover{color:var(--accent);background:rgba(10,122,255,.1)}
+.nb-ueb-platz{opacity:.25}
+.nb-ueb-geist{position:fixed;z-index:200;pointer-events:none;transform:scale(1.06) rotate(-2deg);box-shadow:0 20px 40px rgba(0,0,0,.3);border-radius:8px;opacity:.95}
 .nb-fertig-hinweis{margin:4px 0 0;font-size:13.5px;line-height:1.45;max-width:340px;color:inherit;opacity:.85}
 dialog.nb-wahl{width:min(460px,94vw)!important;max-width:94vw!important;height:fit-content!important;min-height:0!important;max-height:90vh!important;border-radius:26px!important;border:1px solid var(--kante)!important;margin:auto!important}
 dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
@@ -3366,6 +4423,7 @@ dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
       if (ein) einstellungenZeichnen(ein);
     },
     neu: function (modul) { dialogOeffnen(null, modul || null); },
+    suchen: suchen,
     oeffnen: oeffnen,
     offen: function () { return !!E; },
     // für Tests
@@ -3374,7 +4432,7 @@ dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
       pdfBauen: pdfBauen, kritzelOpfer: kritzelOpfer, speichern: speichern, editorSchliessen: editorSchliessen,
       werkzeugWaehlen: werkzeugWaehlen, seiteHinzufuegen: seiteHinzufuegen, pdfInsBuch: pdfInsBuch, bildEinfuegen: bildEinfuegen,
       sicherungErstellen: sicherungErstellen, sicherungEinlesen: sicherungEinlesen, buchAusPdf: buchAusPdf, alle: alle,
-      zuSeite: zuSeite, skala: function () { return E ? skala() : 0; },
+      formErkennen: formErkennen, seitenLesen: seitenLesen, lernenStarten: lernenStarten, zuSeite: zuSeite, skala: function () { return E ? skala() : 0; },
       driveAbgleichen: driveAbgleichen, dateiAbgleichen: dateiAbgleichen, datenZusammenfuehren: datenZusammenfuehren,
       zusammenfuehren: zusammenfuehren, loeschmarken: loeschmarken, buchLoeschen: buchLoeschen, driveCfg: driveCfg
     }

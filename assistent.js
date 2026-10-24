@@ -159,6 +159,11 @@
       parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] }
     },
     {
+      name: 'notizen_durchsuchen',
+      description: 'Durchsucht die Mitschriften (Handschrift, sofern schon von der KI gelesen, Textfelder, PDF-Text) nach einem Begriff. Liefert Notizbuch, Seite und Textauszug.',
+      parameters: { type: 'object', properties: { suche: { type: 'string' } }, required: ['suche'] }
+    },
+    {
       name: 'notizbuecher_auflisten',
       description: 'Listet die Notizbücher (Mitschriften) auf diesem Gerät mit Modul und Seitenzahl.',
       parameters: { type: 'object', properties: {} }
@@ -185,6 +190,12 @@
   async function werkzeugAusfuehren(name, a, aktionen) {
     a = a || {};
     if (name === 'aufgaben_auflisten') return aufgabenFiltern(a);
+    if (name === 'notizen_durchsuchen') {
+      if (!window.Notizen || !window.Notizen.suchen) return { fehler: 'Notizbücher nicht verfügbar' };
+      const t = await window.Notizen.suchen(String(a.suche || ''), 15);
+      return { treffer: t.treffer.map(function (x) { return { notizbuch: x.titel, seite: x.seite + 1, auszug: x.auszug }; }), noch_nicht_gelesene_seiten: t.ungelesen,
+        hinweis: t.ungelesen ? 'Manche handschriftlichen Seiten sind noch nicht von der KI gelesen. Der Schüler kann in der Notizbuch-Ansicht bei der Suche „Handschrift lesen lassen“ tippen.' : undefined };
+    }
     if (name === 'notizbuecher_auflisten') {
       const b = window.Notizen && window.Notizen._intern ? window.Notizen._intern.buecher : [];
       return { notizbuecher: b.map(function (x) { return { titel: x.titel, modul: modulName(x.modul_id), seiten: x.anzahl || 1 }; }) };
@@ -282,16 +293,26 @@
 
   /* ---------- Gemini ---------- */
   async function anfrage(inhalte, signal) {
+    return rohAnfrage({
+      systemInstruction: { parts: [{ text: systemText() }] },
+      contents: inhalte,
+      tools: [{ functionDeclarations: WERKZEUGE }]
+    }, signal);
+  }
+  async function rohAnfrage(body, signal) {
     const c = cfg();
-    const r = await fetch(API + encodeURIComponent(modell()) + ':generateContent', {
-      method: 'POST', signal: signal,
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.schluessel },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemText() }] },
-        contents: inhalte,
-        tools: [{ functionDeclarations: WERKZEUGE }]
-      })
-    });
+    if (!c.schluessel) throw new Error('Für KI-Funktionen bitte zuerst unter Einstellungen → KI-Assistent deinen Gemini-Schlüssel eintragen.');
+    let r;
+    try {
+      r = await fetch(API + encodeURIComponent(modell()) + ':generateContent', {
+        method: 'POST', signal: signal,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.schluessel },
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      throw new Error('Keine Verbindung zu Gemini. Bist du online?');
+    }
     let j = null;
     try { j = await r.json(); } catch (e) { }
     if (!r.ok) {
@@ -299,7 +320,8 @@
       if (r.status === 400 && /api key|API_KEY/i.test(m)) throw new Error('Der API-Schlüssel ist ungültig. Prüfe ihn in den Einstellungen → KI-Assistent.');
       if (r.status === 403) throw new Error('Zugriff verweigert (403). Ist der Schlüssel für die „Generative Language API“ / Gemini freigeschaltet und für diese Website erlaubt?' + (m ? ' Google sagt: ' + m : ''));
       if (r.status === 404) throw new Error('Das Modell „' + modell() + '“ ist für deinen Schlüssel nicht verfügbar. Wähle in den Einstellungen ein anderes Modell.');
-      if (r.status === 429) throw new Error('Zu viele Anfragen – das Limit deines Schlüssels ist gerade erreicht. Warte kurz und versuch es nochmal.');
+      if (r.status === 429) { const e = new Error('Zu viele Anfragen – das Limit deines Schlüssels ist gerade erreicht. Warte kurz und versuch es nochmal.'); e.status = 429; throw e; }
+      if (r.status === 402) throw new Error('Dein Gemini-Guthaben ist aufgebraucht (402). Nimm einen Schlüssel aus einem Projekt ohne Zahlungskonto (Gratis-Tarif) oder lade Guthaben auf.');
       throw new Error('Gemini meldet einen Fehler (' + r.status + ')' + (m ? ': ' + m : ''));
     }
     const kand = j && j.candidates && j.candidates[0];
@@ -363,6 +385,31 @@
       verlaufSpeichern();
       zeichnen(true);
       knoepfe();
+    }
+  }
+
+  /* Allgemeiner Aufruf für andere Teile der App (Notizbücher): Text oder JSON zurück */
+  async function geminiAufruf(o) {
+    const body = { contents: [{ role: 'user', parts: o.teile }] };
+    if (o.system) body.systemInstruction = { parts: [{ text: o.system }] };
+    if (o.schema) body.generationConfig = { responseMimeType: 'application/json', responseSchema: o.schema };
+    let versuch = 0;
+    for (;;) {
+      try {
+        const inhalt = await rohAnfrage(body, o.signal);
+        const text = inhalt.parts.filter(function (p) { return p.text && !p.thought; }).map(function (p) { return p.text; }).join('').trim();
+        if (!o.schema) return text;
+        try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+        catch (e) { throw new Error('Die KI-Antwort war nicht lesbar. Bitte nochmal versuchen.'); }
+      } catch (e) {
+        if (e && e.status === 429 && versuch < 3) {
+          versuch++;
+          if (o.warten) o.warten(versuch);
+          await new Promise(function (ok) { setTimeout(ok, 12000 * versuch); });
+          continue;
+        }
+        throw e;
+      }
     }
   }
 
@@ -629,6 +676,8 @@ html.nb-offen #kiKnopf,html.nb-offen #kiPanel{display:none}
       if (z) einstellungenZeichnen(z);
     },
     oeffnen: function () { umschalten(true); },
+    verfuegbar: function () { return !!cfg().schluessel; },
+    gemini: geminiAufruf,
     kopfKnopf: function () { return '<button class="btn ki-kopf-start" data-ki-start="1" title="KI-Assistent" aria-label="KI-Assistent öffnen">' + FUNKE + '</button>'; },
     _intern: { senden: senden, werkzeugAusfuehren: werkzeugAusfuehren, get verlauf() { return verlauf; }, systemText: function () { return systemText(); } }
   };
