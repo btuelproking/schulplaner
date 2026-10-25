@@ -63,8 +63,9 @@
     },
     farbe: { stift: 0, bleistift: 0, marker: 0, tape: 0, formen: 0, zettel: 0, laser: 0 },
     eigeneFarben: [],
-    breiten: { fueller: [1.0, 1.6, 2.6], kuli: [0.9, 1.4, 2.2], pinsel: [1.8, 3.4, 6], bleistift: [0.8, 1.4, 2.4], marker: [8, 13, 20],
-      tape: [10, 16, 24], formstift: [1, 1.8, 3], formen: [1, 1.8, 3], radierer: [7, 14, 26] },
+    breiten: { fueller: [0.7, 1.5, 3.2], kuli: [0.7, 1.4, 3.0], pinsel: [1.6, 3.6, 8], bleistift: [0.8, 1.6, 3.2], marker: [8, 13, 20],
+      tape: [10, 16, 24], formstift: [0.9, 1.8, 3.6], formen: [0.9, 1.8, 3.6], radierer: [7, 14, 26] },
+    v: 2,
     breite: { fueller: 1, kuli: 1, pinsel: 1, bleistift: 1, marker: 1, tape: 1, formstift: 1, formen: 1, radierer: 1 },
     einst: { fueller: { sp: 0.5, dr: 0.5, st: 0 }, kuli: { st: 0 }, pinsel: { dr: 0.5, st: 0 }, bleistift: { st: 0 }, marker: { st: 0 }, formstift: { st: 0 } },
     markerGerade: false, tapeGerade: true,
@@ -111,6 +112,8 @@
         if (Array.isArray(g.stiftFarben)) { g.farben = g.farben || {}; g.farben.stift = g.stiftFarben; g.farbe = g.farbe || {}; g.farbe.stift = g.stiftFarbe || 0; }
         if (Array.isArray(g.markerFarben)) { g.farben = g.farben || {}; g.farben.marker = g.markerFarben; g.farbe = g.farbe || {}; g.farbe.marker = g.markerFarbe || 0; }
         if (g.radierModus === 'praezise' || g.radierModus === 'marker') g.radierModus = 'standard';
+        // Version 2: neue, deutlicher abgestufte Stiftstärken
+        if (g.v !== 2 && istObjekt(g.breiten)) TINTE.concat(['formen']).forEach(function (k) { delete g.breiten[k]; });
         verschmelzen(w, g);
       }
     } catch (e) { /* Standard behalten */ }
@@ -331,33 +334,24 @@
      ============================================================ */
   const PFADE = new WeakMap(), RAHMEN = new WeakMap();
 
+  /* Druckkurve: normaler Schreibdruck (≈ 0,3) ergibt genau die eingestellte Stärke */
+  function druckFaktor(wz, d, dr) {
+    d = grenze(d, 0, 1);
+    if (wz === 'pinsel') return Math.max(0.12, 1 + (0.15 + 1.55 * Math.sqrt(d) - 1) * dr * 2);
+    return Math.max(0.3, 1 + (0.45 + Math.sqrt(d) - 1) * dr * 2);
+  }
   function breitenFuer(p, wz, b, sp, dr) {
     sp = sp == null ? 0.5 : sp; dr = dr == null ? 0.5 : dr;
     const n = p.length / 3, W2 = new Array(n);
     for (let i = 0; i < n; i++) {
-      const d = p[i * 3 + 2];
-      let w;
-      if (wz === 'kuli' || wz === 'formstift') w = b * (0.82 + 0.36 * d);
-      else if (wz === 'bleistift') w = b * (0.85 + 0.3 * d);
-      else if (wz === 'pinsel') w = b * Math.max(0.08, 1 + (0.12 + 1.75 * Math.pow(d, 1.15) - 1) * dr * 2);
-      else {
-        let v = 0;
-        if (i > 0) v = Math.hypot(p[i * 3] - p[i * 3 - 3], p[i * 3 + 1] - p[i * 3 - 2]);
-        const tempo = 1 - Math.min(0.6 * sp, v / (b * 10));
-        w = b * Math.max(0.15, 0.96 + (d - 0.5) * 2.3 * dr) * tempo;
+      let w = b * druckFaktor(wz, p[i * 3 + 2], dr);
+      if (wz === 'fueller' && i > 0) {                 // schnelle Züge werden etwas schmaler
+        const v = Math.hypot(p[i * 3] - p[i * 3 - 3], p[i * 3 + 1] - p[i * 3 - 2]);
+        w *= 1 - Math.min(0.25 * sp, v / (b * 14));
       }
       W2[i] = w;
     }
-    for (let i = 1; i < n; i++) W2[i] = W2[i - 1] * 0.55 + W2[i] * 0.45;
-    if ((wz === 'fueller' || wz === 'pinsel') && n > 6) {
-      const k = Math.min(wz === 'fueller' ? Math.round(2 + 6 * sp) : 5, Math.floor(n / 3));
-      for (let j = 0; j < k; j++) {
-        const f = 0.55 + 0.45 * (j + 1) / (k + 1);
-        W2[n - 1 - j] *= f;
-        if (wz === 'pinsel' || sp > 0.6) W2[j] *= f;
-      }
-    }
-    for (let i = 0; i < n; i++) W2[i] = Math.max(W2[i], 0.25);
+    for (let i = 1; i < n; i++) W2[i] = W2[i - 1] * 0.6 + W2[i] * 0.4;
     return W2;
   }
   function laenge(p) {
@@ -365,9 +359,82 @@
     for (let i = 3; i < p.length; i += 3) l += Math.hypot(p[i] - p[i - 3], p[i + 1] - p[i - 2]);
     return l;
   }
+  /* Mittellinie gleichmäßig neu abtasten und leicht glätten.
+     Dichte, zittrige Stiftpunkte (Apple Pencil schreibt mit 240 Hz) würden sonst Löcher und Zacken erzeugen. */
+  function mittellinie(p, W2, abstand) {
+    const n = p.length / 3, xs = [p[0]], ys = [p[1]], ws = [W2 ? W2[0] : 0];
+    let rest = 0;
+    for (let i = 1; i < n; i++) {
+      const ax = p[i * 3 - 3], ay = p[i * 3 - 2], bx = p[i * 3], by = p[i * 3 + 1];
+      const seg = Math.hypot(bx - ax, by - ay);
+      if (seg < 1e-6) continue;
+      let t = abstand - rest;
+      while (t <= seg) {
+        const f = t / seg;
+        xs.push(ax + (bx - ax) * f); ys.push(ay + (by - ay) * f);
+        ws.push(W2 ? W2[i - 1] + (W2[i] - W2[i - 1]) * f : 0);
+        t += abstand;
+      }
+      rest = seg - (t - abstand);
+    }
+    const e = n - 1, m = xs.length;
+    if (m > 1 && rest < abstand * 0.35) { xs[m - 1] = p[e * 3]; ys[m - 1] = p[e * 3 + 1]; ws[m - 1] = W2 ? W2[e] : 0; }
+    else { xs.push(p[e * 3]); ys.push(p[e * 3 + 1]); ws.push(W2 ? W2[e] : 0); }
+    for (let k = 0; k < 2; k++) {                     // [1,2,1]-Glättung, Endpunkte bleiben
+      for (let i = 1, px = xs[0], py = ys[0]; i < xs.length - 1; i++) {
+        const x = xs[i], y = ys[i];
+        xs[i] = (px + 2 * x + xs[i + 1]) / 4; ys[i] = (py + 2 * y + ys[i + 1]) / 4;
+        px = x; py = y;
+      }
+    }
+    return { x: xs, y: ys, w: ws };
+  }
+  function glattePfad(xs, ys, pfad) {                // Kurve durch die Mittelpunkte
+    const n = xs.length;
+    pfad.moveTo(xs[0], ys[0]);
+    if (n === 1) { pfad.lineTo(xs[0] + 0.01, ys[0]); return pfad; }
+    for (let i = 1; i < n - 1; i++) pfad.quadraticCurveTo(xs[i], ys[i], (xs[i] + xs[i + 1]) / 2, (ys[i] + ys[i + 1]) / 2);
+    pfad.lineTo(xs[n - 1], ys[n - 1]);
+    return pfad;
+  }
+  /* Stifte mit gleichmäßiger Strichstärke (Kugelschreiber, Bleistift, Formstift):
+     als Linie mit runden Enden gezeichnet – immer vollständig gefüllt */
+  function gleichPfad(p) {
+    const n = p.length / 3, pfad = new Path2D();
+    if (!n) return pfad;
+    if (n === 1 || laenge(p) < 0.4) { pfad.moveTo(p[0], p[1]); pfad.lineTo(p[0] + 0.01, p[1]); return pfad; }
+    const m = mittellinie(p, null, 0.6);
+    return glattePfad(m.x, m.y, pfad);
+  }
+  /* Umriss eines Teilstücks [a..e] mit runden Enden (alle Teile haben dieselbe Umlaufrichtung) */
+  function umrissTeil(pfad, X, Y, B, a, e) {
+    if (e - a < 1) { pfad.moveTo(X[a] + B[a] / 2, Y[a]); pfad.arc(X[a], Y[a], B[a] / 2, 0, Math.PI * 2); return; }
+    const L = [], R = [];
+    let nx = 0, ny = 1;
+    for (let i = a; i <= e; i++) {
+      const v = i > a ? i - 1 : i, h = i < e ? i + 1 : i;
+      const dx = X[h] - X[v], dy = Y[h] - Y[v], l = Math.hypot(dx, dy);
+      if (l > 1e-6) { nx = -dy / l; ny = dx / l; }
+      const hw = B[i] / 2;
+      L.push(X[i] + nx * hw, Y[i] + ny * hw); R.push(X[i] - nx * hw, Y[i] - ny * hw);
+    }
+    const n = e - a + 1;
+    pfad.moveTo(L[0], L[1]);
+    for (let i = 1; i < n - 1; i++) pfad.quadraticCurveTo(L[i * 2], L[i * 2 + 1], (L[i * 2] + L[i * 2 + 2]) / 2, (L[i * 2 + 1] + L[i * 2 + 3]) / 2);
+    pfad.lineTo(L[(n - 1) * 2], L[(n - 1) * 2 + 1]);
+    const aL = Math.atan2(L[(n - 1) * 2 + 1] - Y[e], L[(n - 1) * 2] - X[e]);
+    pfad.arc(X[e], Y[e], B[e] / 2, aL, aL - Math.PI, true);
+    for (let i = n - 2; i > 0; i--) pfad.quadraticCurveTo(R[i * 2], R[i * 2 + 1], (R[i * 2] + R[i * 2 - 2]) / 2, (R[i * 2 + 1] + R[i * 2 - 1]) / 2);
+    pfad.lineTo(R[0], R[1]);
+    const aR = Math.atan2(R[1] - Y[a], R[0] - X[a]);
+    pfad.arc(X[a], Y[a], B[a] / 2, aR, aR - Math.PI, true);
+    pfad.closePath();
+  }
+  /* Füller und Pinselstift: Breite folgt Druck und Tempo */
   function tintenPfad(p, wz, b, sp, dr) {
     const n = p.length / 3, pfad = new Path2D();
     if (!n) return pfad;
+    sp = sp == null ? 0.5 : sp;
     const W2 = breitenFuer(p, wz, b, sp, dr);
     if (n === 1 || laenge(p) < 0.6) {
       let r = 0;
@@ -375,33 +442,26 @@
       pfad.arc(p[0], p[1], r / 2, 0, Math.PI * 2);
       return pfad;
     }
-    const L = new Array(n * 2), R = new Array(n * 2);
-    let nx = 0, ny = 1;
-    for (let i = 0; i < n; i++) {
-      const a = i > 0 ? i - 1 : i, c = i < n - 1 ? i + 1 : i;
-      const dx = p[c * 3] - p[a * 3], dy = p[c * 3 + 1] - p[a * 3 + 1];
-      const l = Math.hypot(dx, dy);
-      if (l > 1e-6) { nx = -dy / l; ny = dx / l; }
-      const hw = W2[i] / 2, x = p[i * 3], y = p[i * 3 + 1];
-      L[i * 2] = x + nx * hw; L[i * 2 + 1] = y + ny * hw;
-      R[i * 2] = x - nx * hw; R[i * 2 + 1] = y - ny * hw;
+    const abstand = Math.max(0.4, b * 0.5);
+    const m = mittellinie(p, W2, abstand), X = m.x, Y = m.y, B = m.w, k = X.length;
+    // Spitze ausdünnen (Füller am Ende, Pinsel an beiden Enden)
+    const auslauf = wz === 'pinsel' ? b * 3 : b * (1.5 + 3 * sp);
+    let s = 0;
+    for (let i = k - 1; i > 0 && s < auslauf; i--) { B[i] *= 0.5 + 0.5 * s / auslauf; s += Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]); }
+    if (wz === 'pinsel' || sp > 0.6) {
+      s = 0;
+      for (let i = 0; i < k - 1 && s < auslauf; i++) { B[i] *= 0.5 + 0.5 * s / auslauf; s += Math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]); }
     }
-    pfad.moveTo(L[0], L[1]);
-    for (let i = 1; i < n - 1; i++) {
-      pfad.quadraticCurveTo(L[i * 2], L[i * 2 + 1], (L[i * 2] + L[i * 2 + 2]) / 2, (L[i * 2 + 1] + L[i * 2 + 3]) / 2);
+    for (let i = 0; i < k; i++) B[i] = Math.max(B[i], 0.25);
+    // an scharfen Knicken teilen – sonst faltet sich der Umriss und es entstehen Löcher
+    let a = 0;
+    for (let i = 1; i < k - 1; i++) {
+      const w1 = Math.atan2(Y[i] - Y[i - 1], X[i] - X[i - 1]), w2 = Math.atan2(Y[i + 1] - Y[i], X[i + 1] - X[i]);
+      let dw = Math.abs(w2 - w1); if (dw > Math.PI) dw = 2 * Math.PI - dw;
+      const seg = Math.min(Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]), Math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]));
+      if (dw > 0.85 * seg / (B[i] / 2) && dw > 0.35) { umrissTeil(pfad, X, Y, B, a, i); a = i; }
     }
-    const e = n - 1;
-    pfad.lineTo(L[e * 2], L[e * 2 + 1]);
-    const ex = p[e * 3], ey = p[e * 3 + 1];
-    const aL = Math.atan2(L[e * 2 + 1] - ey, L[e * 2] - ex);
-    pfad.arc(ex, ey, W2[e] / 2, aL, aL - Math.PI, true);
-    for (let i = n - 2; i > 0; i--) {
-      pfad.quadraticCurveTo(R[i * 2], R[i * 2 + 1], (R[i * 2] + R[i * 2 - 2]) / 2, (R[i * 2 + 1] + R[i * 2 - 1]) / 2);
-    }
-    pfad.lineTo(R[0], R[1]);
-    const aR = Math.atan2(R[1] - p[1], R[0] - p[0]);
-    pfad.arc(p[0], p[1], W2[0] / 2, aR, aR - Math.PI, true);
-    pfad.closePath();
+    umrissTeil(pfad, X, Y, B, a, k - 1);
     return pfad;
   }
   function linienPfad(p) {
@@ -444,11 +504,13 @@
     pf.closePath();
     return pf;
   }
+  const GLEICH = { kuli: 1, bleistift: 1, formstift: 1 };     // Stifte mit gleichmäßiger Strichstärke
   function pfad(st) {
     let x = PFADE.get(st);
     if (!x) {
       if (st.w === 'marker' || st.w === 'tape') x = linienPfad(st.p);
       else if (st.w === 'form') x = eckPfad(st.p, !!st.z);
+      else if (GLEICH[st.w]) x = gleichPfad(st.p);
       else x = tintenPfad(st.p, st.w, st.b, st.sp, st.dr);
       PFADE.set(st, x);
     }
@@ -530,8 +592,12 @@
       }
       return;
     }
-    if (st.w === 'bleistift') {
-      ctx.save(); ctx.globalAlpha = st.a || 0.88; ctx.fillStyle = kornMuster(ctx, F); ctx.fill(pfad(st)); ctx.restore(); return;
+    if (GLEICH[st.w]) {
+      ctx.save();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = st.b;
+      if (st.w === 'bleistift') { ctx.globalAlpha = st.a || 0.88; ctx.strokeStyle = kornMuster(ctx, F); }
+      else ctx.strokeStyle = F;
+      ctx.stroke(pfad(st)); ctx.restore(); return;
     }
     ctx.fillStyle = F; ctx.fill(pfad(st));
   }
@@ -1330,8 +1396,8 @@
   /* ---------- Eingabe ---------- */
   function punktAus(e) { return { x: e.clientX - E.rx, y: e.clientY - E.ry }; }
   function druck(e) {
-    if (e.pointerType === 'pen') return e.pressure > 0 ? Math.min(1, e.pressure) : 0.35;
-    return 0.5;
+    if (e.pointerType === 'pen') return e.pressure > 0 ? Math.min(1, e.pressure) : 0.3;
+    return 0.3;                                                   // Maus und Finger: wie normaler Schreibdruck
   }
   function teilEvents(e) {
     if (e.getCoalescedEvents) {
@@ -1392,6 +1458,7 @@
     E.zeiger = e.pointerId; E.zeigerTyp = e.pointerType;
     E.zeigerStart = { id: e.pointerId, x: pt.x, y: pt.y, t: performance.now() };
     try { E.el.eingabe.setPointerCapture(e.pointerId); } catch (x) { }
+    if (W.wz === 'laser') { laserStart(pt); return; }                   // zeigt nur – geht auch im Nur-lesen-Modus
     const w = welt(pt.x, pt.y);
     E.kachelTipp = inKachel(w);
     if (E.kachelTipp) return;
@@ -1405,7 +1472,6 @@
     if (W.wz === 'zettel') { E.textTipp = { pt: pt, zettel: true }; return; }
     if (W.wz === 'lasso') { lassoStart(w); return; }
     if (W.wz === 'radierer') { radiererStart(pt, w); return; }
-    if (W.wz === 'laser') { laserStart(pt); return; }
     if (W.wz === 'formen' && W.formArt !== 'auto') { formZugStart(w); return; }
     strichStart(w, e, pt);
   }
@@ -1418,7 +1484,7 @@
       if (E.ziehen) { ziehenMove(punktAus(e)); return; }
       if (E.leseTipp) { const q = punktAus(e); verschieben(q.x - E.leseTipp.letzt.x, q.y - E.leseTipp.letzt.y); E.leseTipp.letzt = q; return; }
       if (E.kachelTipp || E.textTipp) return;
-      if (E.laserZug) { evs.forEach(function (x) { laserMove(punktAus(x)); }); return; }
+      if (E.laserZug && E.laserZug.an) { evs.forEach(function (x) { laserMove(punktAus(x)); }); return; }
       if (E.formZug) { formZugMove(punktAus(e)); return; }
       if (E.strich) { evs.forEach(function (x) { strichPunkt(x); }); plane('live'); return; }
       if (E.radierer) { evs.forEach(function (x) { radiererMove(x); }); return; }
@@ -1594,8 +1660,8 @@
     st.roh.push(x, y, d);
     // Strich-Stabilisierung: 0 = direkt, 1 = stark geglättet
     const g = st.glatt, m = g.length;
-    let a = 0.72 - 0.62 * grenze(st.stab, 0, 1);
-    if (E.zeigerTyp !== 'pen') a *= 0.75;
+    let a = 1 - 0.85 * grenze(st.stab, 0, 1);
+    if (E.zeigerTyp !== 'pen') a *= 0.8;
     g.push(g[m - 3] + (x - g[m - 3]) * a, g[m - 2] + (y - g[m - 2]) * a, g[m - 1] + (d - g[m - 1]) * 0.4);
   }
   function istTipp(st) {
@@ -1625,7 +1691,7 @@
     if (st.wz === 'bleistift') {
       let summe = 0;
       for (let k = 2; k < r.length; k += 3) summe += r[k];
-      strich.a = r2(0.55 + 0.4 * grenze(summe / (r.length / 3), 0, 1));
+      strich.a = r2(Math.min(0.95, 0.6 + 0.5 * grenze(summe / (r.length / 3), 0, 1)));
     }
     if (st.autoForm || (st.wz === 'formstift' && formInfo)) {            // als echtes Formobjekt speichern
       if (formInfo) {
@@ -1793,47 +1859,77 @@
   }
 
   /* ---------- Laserpointer ---------- */
+  const LASER_SPUR = 650, LASER_AUS = 380;           // ms: so lange bleibt die Spur, so schnell blendet sie aus
   function laserStart(pt) {
-    E.laserZug = { punkte: [{ x: pt.x, y: pt.y, t: performance.now() }], an: true };
-    laserTakt();
+    const t = performance.now();
+    E.laserZug = { punkte: [{ x: pt.x, y: pt.y, t: t }], an: true, x: pt.x, y: pt.y, ende: 0 };
+    if (!E.laserLaeuft) { E.laserLaeuft = true; requestAnimationFrame(laserTakt); }
+    plane('live');
   }
   function laserMove(pt) {
     const z = E.laserZug;
-    if (!z) return;
-    z.punkte.push({ x: pt.x, y: pt.y, t: performance.now() });
-    if (W.laserArt === 'punkt') z.punkte = z.punkte.slice(-1);
+    if (!z || !z.an) return;
+    z.x = pt.x; z.y = pt.y;
+    const l = z.punkte[z.punkte.length - 1];
+    if (!l || Math.hypot(pt.x - l.x, pt.y - l.y) >= 1.5) z.punkte.push({ x: pt.x, y: pt.y, t: performance.now() });
   }
-  function laserEnde() { if (E.laserZug) { E.laserZug.an = false; E.laserZug.ende = performance.now(); } }
+  function laserEnde() {
+    const z = E && E.laserZug;
+    if (!z || !z.an) return;
+    z.an = false; z.ende = performance.now();
+    plane('live');
+  }
   function laserTakt() {
-    if (!E || !E.laserZug) return;
-    const z = E.laserZug, jetztT = performance.now();
-    if (W.laserArt === 'spur') z.punkte = z.punkte.filter(function (q) { return jetztT - q.t < 700; });
-    if (!z.an && (W.laserArt === 'punkt' ? jetztT - z.ende > 450 : !z.punkte.length)) { E.laserZug = null; plane('live'); return; }
+    if (!E) return;
+    const z = E.laserZug, t = performance.now();
+    if (!z) { E.laserLaeuft = false; return; }
+    while (z.punkte.length && t - z.punkte[0].t > LASER_SPUR) z.punkte.shift();
+    if (!z.an && t - z.ende > LASER_AUS) { E.laserZug = null; E.laserLaeuft = false; plane('live'); return; }
     plane('live');
     requestAnimationFrame(laserTakt);
   }
   function laserZeichnen(ctx) {
     const z = E.laserZug;
-    if (!z || !z.punkte.length) return;
-    const d = E.dpr, farbe = aktuelleFarbe('laser'), jetztT = performance.now();
+    if (!z) return;
+    const d = E.dpr, farbe = aktuelleFarbe('laser'), t = performance.now();
+    const aus = z.an ? 1 : Math.max(0, 1 - (t - z.ende) / LASER_AUS);
+    if (aus <= 0) return;
     ctx.setTransform(d, 0, 0, d, 0, 0);
     ctx.save();
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.shadowColor = farbe; ctx.shadowBlur = 12;
-    if (W.laserArt === 'spur' && z.punkte.length > 1) {
-      for (let k = 1; k < z.punkte.length; k++) {
-        const a = z.punkte[k - 1], b = z.punkte[k], alter = (jetztT - b.t) / 700;
-        ctx.globalAlpha = Math.max(0, 1 - alter);
-        ctx.strokeStyle = farbe; ctx.lineWidth = 5 * (1 - alter * 0.5);
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'round';                      // runde Enden würden an den Stufengrenzen Perlen bilden
+    if (W.laserArt === 'spur') {
+      const q = z.an ? z.punkte.concat([{ x: z.x, y: z.y, t: t }]) : z.punkte;
+      // Spur in Altersstufen zeichnen: jede Stufe ein Pfad, damit sich halbtransparente Stücke nicht überlagern
+      const STUFEN = 14, schichten = [[0.26, 7, 9, farbe], [1, 2.2, 2.6, farbe], [0.75, 0.8, 1.2, '#FFFFFF']];
+      for (let sch = 0; sch < schichten.length; sch++) {
+        const S = schichten[sch];
+        for (let st = 0; st < STUFEN; st++) {
+          const f = (st + 1) / STUFEN;
+          let offen = false, leer = true;
+          ctx.beginPath();
+          for (let k = 1; k < q.length; k++) {
+            const jung = 1 - (t - q[k].t) / LASER_SPUR;
+            if (jung <= 0 || Math.min(STUFEN - 1, Math.floor(jung * STUFEN)) !== st) { offen = false; continue; }
+            if (!offen) { ctx.moveTo(q[k - 1].x, q[k - 1].y); offen = true; }
+            ctx.lineTo(q[k].x, q[k].y); leer = false;
+          }
+          if (leer) continue;
+          ctx.globalAlpha = aus * S[0] * f;
+          ctx.lineWidth = S[1] + S[2] * f; ctx.strokeStyle = S[3];
+          ctx.stroke();
+        }
       }
     }
-    const l = z.punkte[z.punkte.length - 1];
-    ctx.globalAlpha = z.an ? 1 : Math.max(0, 1 - (jetztT - (z.ende || jetztT)) / 450);
-    ctx.fillStyle = farbe;
-    ctx.beginPath(); ctx.arc(l.x, l.y, 6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha *= 0.8;
-    ctx.beginPath(); ctx.arc(l.x, l.y, 2.4, 0, Math.PI * 2); ctx.fill();
+    // leuchtender Punkt an der Stiftspitze
+    const x = z.x, y = z.y, glanz = ctx.createRadialGradient(x, y, 0, x, y, 16);
+    const rgb = hexRgb(farbe).join(',');
+    glanz.addColorStop(0, 'rgba(' + rgb + ',1)'); glanz.addColorStop(1, 'rgba(' + rgb + ',0)');
+    ctx.globalAlpha = aus * 0.45; ctx.fillStyle = glanz;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = aus; ctx.fillStyle = farbe;
+    ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = aus * 0.85; ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
   /* ---------- Formen erkennen (Stift am Ende kurz halten) ---------- */
@@ -2759,7 +2855,7 @@
       const g = punktGroesse(w, b);
       return '<button class="nb-breite' + (i === W.breite[w] ? ' aktiv' : '') + '" data-nb-breite="' + w + ':' + i + '" aria-label="Stärke ' + (i + 1) + '">' +
         (w === 'radierer' ? '<span style="width:' + g + 'px;height:' + g + 'px;background:transparent;border:1.6px solid currentColor"></span>'
-          : '<i style="height:' + Math.max(1.5, Math.min(9, g / 2)) + 'px"></i>') + '</button>';
+          : '<i style="height:' + (w === 'marker' || w === 'tape' ? Math.max(1.5, Math.min(9, g / 2)) : Math.max(1.5, Math.min(9, 1 + b * 1.6))).toFixed(1) + 'px"></i>') + '</button>';
     }).join('') + '</div>';
   }
   function farbenHTML(g, aktivIndex) {
@@ -3059,7 +3155,7 @@
     return aktuell;
   }
   function breitePopover(anker, wz, index) {
-    const bereich = wz === 'marker' || wz === 'tape' ? [4, 40, 0.5] : (wz === 'radierer' ? [4, 40, 1] : [0.3, 8, 0.1]);
+    const bereich = wz === 'marker' || wz === 'tape' ? [4, 40, 0.5] : (wz === 'radierer' ? [4, 40, 1] : [0.3, 12, 0.1]);
     const wert = W.breiten[wz][index];
     const anzeige = function (v) { return wz === 'radierer' ? Math.round(v) + ' px' : (v * 0.3528).toFixed(2).replace('.', ',') + ' mm'; };
     popoverZeigen(anker, '<div class="nb-pop-titel">Stärke <span class="nb-pop-wert">' + anzeige(wert) + '</span></div>' +
