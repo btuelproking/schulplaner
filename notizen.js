@@ -11,7 +11,7 @@
      ============================================================ */
   const SEITE_B = 595, SEITE_H = 842;          // A4 in Punkt – passt 1:1 zum PDF
   const FORMATE = { a4: [595, 842], a5: [420, 595] };
-  function formatGroesse(buch) { return FORMATE[buch && buch.format] || FORMATE.a4; }
+  function formatGroesse(buch) { const f = FORMATE[buch && buch.format] || FORMATE.a4; return buch && buch.quer ? [f[1], f[0]] : f; }
   const LUECKE = 22, NEU_H = 96;                // Abstand zwischen Seiten, Kachel „Neue Seite“
   const LINIE = 22.7, KARO = 14.17;             // 8 mm Lineatur, 5 mm Karo
   const SCHRIFT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif';
@@ -20,25 +20,62 @@
     ['#FFB347', '#E8840C'], ['#F4D35E', '#D4A20A'], ['#4CD07D', '#1E9A55'], ['#3CC8C8', '#138C9A'],
     ['#8A94A3', '#4A5361'], ['#3A4150', '#151820']
   ];
-  const VORLAGEN = [['blanko', 'Blanko'], ['liniert', 'Liniert'], ['kariert', 'Kariert'], ['punktiert', 'Punktiert'], ['cornell', 'Cornell']];
-  const PAPIER = { weiss: '#FFFFFF', creme: '#FBF6E8' };
-  const FARBEN = ['#1D1D1F', '#55555E', '#9A9AA3', '#FFFFFF', '#0A5BD6', '#2F9BFF', '#12968E', '#2FB956',
-    '#8BC34A', '#F4C20D', '#FF9500', '#FF5A1F', '#D12B2B', '#E8336F', '#C2408A', '#AF52DE',
-    '#6B4EFF', '#3A2E8C', '#8B5A2B', '#000000'];
-  const MARKER_FARBEN = ['#FFE14D', '#C6F36B', '#7CF0B0', '#8FD3FF', '#C9A7FF', '#FF9ADF', '#FFB35C', '#FF8A80'];
-  const STIFTE = ['fueller', 'kuli', 'pinsel'];
-  const NAMEN = { fueller: 'Füller', kuli: 'Kugelschreiber', pinsel: 'Pinsel', marker: 'Textmarker',
-    radierer: 'Radierer', lasso: 'Lasso', text: 'Textfeld' };
+  const VORLAGEN_GRUPPEN = [
+    ['Herkömmlich', [['blanko', 'Leer'], ['punktiert', 'Gepunktet'], ['liniert_schmal', 'Liniert schmal'], ['liniert', 'Liniert breit'], ['kariert', 'Kariert'], ['kariert_gross', 'Kariert groß']]],
+    ['Schreibpapier', [['cornell', 'Cornell'], ['notizblock', 'Notizblock'], ['spalte1', 'Eine Spalte'], ['spalten3', 'Drei Spalten']]],
+    ['Mathe & Technik', [['millimeter', 'Millimeter'], ['koordinaten', 'Koordinaten']]],
+    ['Planung', [['todo', 'To-dos'], ['woche', 'Wochenplaner'], ['monat', 'Monatsplaner']]],
+    ['Musik', [['noten', 'Notenpapier'], ['tabs', 'Gitarren-Tabs']]]
+  ];
+  const VORLAGEN = [].concat.apply([], VORLAGEN_GRUPPEN.map(function (g) { return g[1]; }));
+  const PAPIER = { weiss: '#FFFFFF', creme: '#FBF6E8', gelb: '#FFF7CF', grau: '#ECEEF2', dunkel: '#23262F' };
+  const PAPIER_NAMEN = [['weiss', 'Weiß'], ['creme', 'Creme'], ['gelb', 'Gelb'], ['grau', 'Grau'], ['dunkel', 'Dunkel']];
+  // Farbpalette wie bei GoodNotes: 3 Reihen à 5
+  const PALETTE = ['#1D1D1F', '#4A4A52', '#8E8E96', '#D1D1D6', '#FFFFFF',
+    '#E53935', '#8E24AA', '#F4511E', '#F48FB1', '#FB8C00',
+    '#1E66F5', '#1A237E', '#2E7D32', '#7CB342', '#FDD835'];
+  const MARKER_PALETTE = ['#FFE14D', '#FFC94D', '#FFB35C', '#FF8A80', '#FF9ADF',
+    '#C9A7FF', '#8FD3FF', '#80DEEA', '#7CF0B0', '#C6F36B',
+    '#E0E0E0', '#B0BEC5', '#FFD8A8', '#B2F2BB', '#D0BFFF'];
+  const TAPE_PALETTE = ['#FF6B6B', '#FFA94D', '#FFD43B', '#69DB7C', '#4DABF7',
+    '#9775FA', '#F783AC', '#ADB5BD', '#868E96', '#343A40',
+    '#FFC9C9', '#FFE8CC', '#FFF3BF', '#D3F9D8', '#D0EBFF'];
+  const ZETTEL_PALETTE = ['#FFF3A3', '#FFE0A3', '#FFC9D9', '#E5D4FF', '#C7E8FF',
+    '#C7F0C2', '#FFFFFF', '#F1F3F5', '#FFD6A5', '#CAFFBF',
+    '#9BF6FF', '#BDB2FF', '#FFC6FF', '#FDFFB6', '#E9ECEF'];
+  const FARBEN = PALETTE, MARKER_FARBEN = MARKER_PALETTE;
+  const STIFTARTEN = ['fueller', 'kuli', 'pinsel'];
+  const STIFTGRUPPE = ['fueller', 'kuli', 'pinsel', 'bleistift', 'marker', 'tape', 'formstift'];
+  const STIFTE = STIFTARTEN;
+  const TINTE = ['fueller', 'kuli', 'pinsel', 'bleistift', 'formstift'];
+  const NAMEN = { fueller: 'Füller', kuli: 'Kugelschreiber', pinsel: 'Pinselstift', bleistift: 'Bleistift', marker: 'Textmarker', tape: 'Tape',
+    formstift: 'Formstift', radierer: 'Radierer', lasso: 'Lasso', text: 'Textfeld', formen: 'Formen', zettel: 'Notizzettel', laser: 'Laserpointer',
+    stift: 'Stift', bild: 'Bild', audio: 'Aufnahme' };
+  const FORM_ARTEN = [['auto', 'Automatisch'], ['linie', 'Linie'], ['pfeil', 'Pfeil'], ['winkel', 'Winkelpfeil'], ['bogen', 'Bogenpfeil'],
+    ['rechteck', 'Rechteck'], ['kreis', 'Kreis'], ['dreieck', 'Dreieck'], ['raute', 'Raute'], ['rund', 'Abgerundetes Rechteck']];
 
   const W_STANDARD = {
-    wz: 'fueller',
-    stiftFarben: ['#1D1D1F', '#0A5BD6', '#D12B2B'], stiftFarbe: 0,
-    markerFarben: ['#FFE14D', '#7CF0B0', '#FF9ADF'], markerFarbe: 0,
-    breiten: { fueller: [1.0, 1.6, 2.6], kuli: [0.9, 1.4, 2.2], pinsel: [1.8, 3.4, 6], marker: [8, 13, 20], radierer: [7, 14, 26] },
-    breite: { fueller: 1, kuli: 1, pinsel: 1, marker: 1, radierer: 1 },
-    radierModus: 'praezise', markerGerade: false,
+    wz: 'fueller', stiftArt: 'fueller', letzterStift: 'fueller', vorRadierer: 'fueller',
+    farben: {
+      stift: ['#1D1D1F', '#1E66F5', '#E53935'], bleistift: ['#3A3A40', '#8E8E96', '#2E7D32'], marker: ['#FFE14D', '#7CF0B0', '#FF9ADF'],
+      tape: ['#FF6B6B', '#FFA94D', '#FFD43B'], formen: ['#1D1D1F', '#1E66F5', '#E53935'], zettel: ['#FFF3A3', '#FFC9D9', '#C7E8FF'],
+      laser: ['#FF3B30', '#30D158', '#0A84FF']
+    },
+    farbe: { stift: 0, bleistift: 0, marker: 0, tape: 0, formen: 0, zettel: 0, laser: 0 },
+    eigeneFarben: [],
+    breiten: { fueller: [1.0, 1.6, 2.6], kuli: [0.9, 1.4, 2.2], pinsel: [1.8, 3.4, 6], bleistift: [0.8, 1.4, 2.4], marker: [8, 13, 20],
+      tape: [10, 16, 24], formstift: [1, 1.8, 3], formen: [1, 1.8, 3], radierer: [7, 14, 26] },
+    breite: { fueller: 1, kuli: 1, pinsel: 1, bleistift: 1, marker: 1, tape: 1, formstift: 1, formen: 1, radierer: 1 },
+    einst: { fueller: { sp: 0.5, dr: 0.5, st: 0 }, kuli: { st: 0 }, pinsel: { dr: 0.5, st: 0 }, bleistift: { st: 0 }, marker: { st: 0 }, formstift: { st: 0 } },
+    markerGerade: false, tapeGerade: true,
+    radierModus: 'standard', radierFilter: { stift: true, bleistift: true, marker: true, tape: true }, radierAuto: false,
+    lassoArt: 'frei', lassoFilter: { schrift: true, bilder: true, formen: true, pfeile: true, text: true, tape: true, zettel: true },
+    formArt: 'auto', formFuellen: false, formDeckkraft: 0.25,
+    laserArt: 'spur',
     textGroesse: 14, textFett: false,
-    finger: false, kritzeln: true, formen: true, format: 'a4'
+    finger: false, kritzeln: true, kritzelAlles: true, umkreisen: true, formen: true, format: 'a4', ausrichten: true, horizontal: false,
+    vorlage: 'liniert', papier: 'weiss',
+    leiste: { lasso: true, stift: true, radierer: true, text: true, bild: true, formen: true, zettel: true, laser: true, audio: true }
   };
   const W_SCHLUESSEL = 'schulplaner.notizen.werkzeug';
 
@@ -56,23 +93,41 @@
   function kopie(o) { return JSON.parse(JSON.stringify(o)); }
   function jetzt() { return Date.now(); }
   function $$(wurzel, sel) { return Array.prototype.slice.call(wurzel.querySelectorAll(sel)); }
-
+  function istObjekt(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+  function verschmelzen(ziel, quelle) {
+    Object.keys(ziel).forEach(function (k) {
+      if (quelle[k] === undefined || quelle[k] === null) return;
+      if (istObjekt(ziel[k]) && istObjekt(quelle[k])) verschmelzen(ziel[k], quelle[k]);
+      else if (Array.isArray(ziel[k]) && Array.isArray(quelle[k])) { if (quelle[k].length >= ziel[k].length || k === 'eigeneFarben') ziel[k] = quelle[k].slice(); }
+      else if (typeof ziel[k] === typeof quelle[k]) ziel[k] = quelle[k];
+    });
+  }
   function werkzeugLaden() {
     const w = kopie(W_STANDARD);
     try {
       const g = JSON.parse(localStorage.getItem(W_SCHLUESSEL) || 'null');
-      if (g && typeof g === 'object') {
-        Object.keys(w).forEach(function (k) {
-          if (g[k] === undefined) return;
-          if (k === 'breiten' || k === 'breite') {
-            Object.keys(w[k]).forEach(function (z) { if (g[k] && g[k][z] !== undefined) w[k][z] = g[k][z]; });
-          } else w[k] = g[k];
-        });
+      if (istObjekt(g)) {
+        // Einstellungen der älteren Version übernehmen
+        if (Array.isArray(g.stiftFarben)) { g.farben = g.farben || {}; g.farben.stift = g.stiftFarben; g.farbe = g.farbe || {}; g.farbe.stift = g.stiftFarbe || 0; }
+        if (Array.isArray(g.markerFarben)) { g.farben = g.farben || {}; g.farben.marker = g.markerFarben; g.farbe = g.farbe || {}; g.farbe.marker = g.markerFarbe || 0; }
+        if (g.radierModus === 'praezise' || g.radierModus === 'marker') g.radierModus = 'standard';
+        verschmelzen(w, g);
       }
     } catch (e) { /* Standard behalten */ }
-    if (!NAMEN[w.wz]) w.wz = 'fueller';
+    if (!NAMEN[w.wz] || w.wz === 'stift' || w.wz === 'bild' || w.wz === 'audio') w.wz = 'fueller';
+    if (STIFTARTEN.indexOf(w.stiftArt) < 0) w.stiftArt = 'fueller';
+    if (STIFTGRUPPE.indexOf(w.letzterStift) < 0) w.letzterStift = 'fueller';
+    Object.keys(w.farbe).forEach(function (g) { w.farbe[g] = grenze(w.farbe[g] | 0, 0, w.farben[g].length - 1); });
     return w;
   }
+  function farbGruppe(wz) {
+    if (wz === 'bleistift' || wz === 'marker' || wz === 'tape' || wz === 'formen' || wz === 'zettel' || wz === 'laser') return wz;
+    return 'stift';
+  }
+  function paletteFuer(g) { return g === 'marker' ? MARKER_PALETTE : g === 'tape' ? TAPE_PALETTE : g === 'zettel' ? ZETTEL_PALETTE : PALETTE; }
+  function aktuelleFarbe(wz) { const g = farbGruppe(wz); return W.farben[g][W.farbe[g]]; }
+  function einst(wz) { return W.einst[wz] || {}; }
+  function hauptWerkzeug(wz) { return STIFTGRUPPE.indexOf(wz) >= 0 ? 'stift' : wz; }
   let W = werkzeugLaden();
   function werkzeugSpeichern() { try { localStorage.setItem(W_SCHLUESSEL, JSON.stringify(W)); } catch (e) { } }
   function aktuelleBreite(wz) { return W.breiten[wz][W.breite[wz]]; }
@@ -172,7 +227,7 @@
     const b = {
       id: uid(), titel: daten.titel || 'Notizbuch', modul_id: daten.modul_id || null,
       cover: daten.cover || 0, vorlage: daten.vorlage || 'liniert', papier: daten.papier || 'weiss',
-      format: FORMATE[daten.format] ? daten.format : 'a4', ordner: String(daten.ordner || '').trim(),
+      format: FORMATE[daten.format] ? daten.format : 'a4', ordner: String(daten.ordner || '').trim(), quer: !!daten.quer,
       seiten: [], anzahl: 0, erstellt: jetzt(), geaendert: jetzt(), metaG: jetzt(), weg: {}, zuletzt: null
     };
     const seiten = daten.seiten && daten.seiten.length ? daten.seiten.map(function (s) {
@@ -226,6 +281,7 @@
         if (s.hg) benutzt.add(s.hg);
         s.bilder.forEach(function (b) { benutzt.add(b.d); });
       });
+      (buch.aufnahmen || []).forEach(function (a) { benutzt.add(a.d); });
       const dateien = await perIndex('dateien', buch.id);
       const weg = dateien.filter(function (d) { return !benutzt.has(d.id); });
       if (weg.length) await transaktion(['dateien'], 'readwrite', function (s) { weg.forEach(function (d) { s.dateien.delete(d.id); }); });
@@ -275,28 +331,30 @@
      ============================================================ */
   const PFADE = new WeakMap(), RAHMEN = new WeakMap();
 
-  function breitenFuer(p, wz, b) {
+  function breitenFuer(p, wz, b, sp, dr) {
+    sp = sp == null ? 0.5 : sp; dr = dr == null ? 0.5 : dr;
     const n = p.length / 3, W2 = new Array(n);
     for (let i = 0; i < n; i++) {
       const d = p[i * 3 + 2];
       let w;
-      if (wz === 'kuli') w = b * (0.82 + 0.36 * d);
-      else if (wz === 'pinsel') w = b * (0.12 + 1.75 * Math.pow(d, 1.15));
+      if (wz === 'kuli' || wz === 'formstift') w = b * (0.82 + 0.36 * d);
+      else if (wz === 'bleistift') w = b * (0.85 + 0.3 * d);
+      else if (wz === 'pinsel') w = b * Math.max(0.08, 1 + (0.12 + 1.75 * Math.pow(d, 1.15) - 1) * dr * 2);
       else {
         let v = 0;
         if (i > 0) v = Math.hypot(p[i * 3] - p[i * 3 - 3], p[i * 3 + 1] - p[i * 3 - 2]);
-        const tempo = 1 - Math.min(0.3, v / (b * 10));
-        w = b * (0.38 + 1.15 * d) * tempo;
+        const tempo = 1 - Math.min(0.6 * sp, v / (b * 10));
+        w = b * Math.max(0.15, 0.96 + (d - 0.5) * 2.3 * dr) * tempo;
       }
       W2[i] = w;
     }
     for (let i = 1; i < n; i++) W2[i] = W2[i - 1] * 0.55 + W2[i] * 0.45;
-    if (wz !== 'kuli' && n > 6) {
-      const k = Math.min(5, Math.floor(n / 3));
+    if ((wz === 'fueller' || wz === 'pinsel') && n > 6) {
+      const k = Math.min(wz === 'fueller' ? Math.round(2 + 6 * sp) : 5, Math.floor(n / 3));
       for (let j = 0; j < k; j++) {
         const f = 0.55 + 0.45 * (j + 1) / (k + 1);
         W2[n - 1 - j] *= f;
-        if (wz === 'pinsel') W2[j] *= f;
+        if (wz === 'pinsel' || sp > 0.6) W2[j] *= f;
       }
     }
     for (let i = 0; i < n; i++) W2[i] = Math.max(W2[i], 0.25);
@@ -307,10 +365,10 @@
     for (let i = 3; i < p.length; i += 3) l += Math.hypot(p[i] - p[i - 3], p[i + 1] - p[i - 2]);
     return l;
   }
-  function tintenPfad(p, wz, b) {
+  function tintenPfad(p, wz, b, sp, dr) {
     const n = p.length / 3, pfad = new Path2D();
     if (!n) return pfad;
-    const W2 = breitenFuer(p, wz, b);
+    const W2 = breitenFuer(p, wz, b, sp, dr);
     if (n === 1 || laenge(p) < 0.6) {
       let r = 0;
       for (let i = 0; i < n; i++) r = Math.max(r, W2[i]);
@@ -357,10 +415,125 @@
     pfad.lineTo(p[(n - 1) * 3], p[(n - 1) * 3 + 1]);
     return pfad;
   }
+  function eckPfad(p, zu) {                          // gerade Verbindungen (Formen)
+    const pf = new Path2D(), n = p.length / 3;
+    if (!n) return pf;
+    pf.moveTo(p[0], p[1]);
+    for (let i = 1; i < n; i++) pf.lineTo(p[i * 3], p[i * 3 + 1]);
+    if (n === 1) pf.lineTo(p[0] + 0.01, p[1]);
+    if (zu) pf.closePath();
+    return pf;
+  }
+  function kopfPfad(p, b, amAnfang) {                 // Pfeilspitze
+    const n = p.length / 3;
+    if (n < 2) return null;
+    let ax, ay, bx, by;
+    if (amAnfang) { bx = p[0]; by = p[1]; ax = p[3]; ay = p[4]; }
+    else { bx = p[(n - 1) * 3]; by = p[(n - 1) * 3 + 1]; ax = p[(n - 2) * 3]; ay = p[(n - 2) * 3 + 1]; }
+    // bei Bögen weiter zurückgehen, damit die Richtung stimmt
+    if (n > 6) {
+      const k = amAnfang ? 3 : n - 4;
+      ax = p[k * 3]; ay = p[k * 3 + 1];
+    }
+    const w = Math.atan2(by - ay, bx - ax), l = Math.max(7, b * 4.2), o = 0.45;
+    const pf = new Path2D();
+    pf.moveTo(bx + Math.cos(w) * b * 0.6, by + Math.sin(w) * b * 0.6);
+    pf.lineTo(bx - Math.cos(w - o) * l, by - Math.sin(w - o) * l);
+    pf.lineTo(bx - Math.cos(w) * l * 0.72, by - Math.sin(w) * l * 0.72);
+    pf.lineTo(bx - Math.cos(w + o) * l, by - Math.sin(w + o) * l);
+    pf.closePath();
+    return pf;
+  }
   function pfad(st) {
     let x = PFADE.get(st);
-    if (!x) { x = st.w === 'marker' ? linienPfad(st.p) : tintenPfad(st.p, st.w, st.b); PFADE.set(st, x); }
+    if (!x) {
+      if (st.w === 'marker' || st.w === 'tape') x = linienPfad(st.p);
+      else if (st.w === 'form') x = eckPfad(st.p, !!st.z);
+      else x = tintenPfad(st.p, st.w, st.b, st.sp, st.dr);
+      PFADE.set(st, x);
+    }
     return x;
+  }
+  const KORN = new Map();
+  function hexRgb(h) {
+    const m = String(h || '').replace('#', '');
+    const v = m.length === 3 ? m.split('').map(function (c) { return c + c; }).join('') : m.padEnd(6, '0');
+    return [parseInt(v.slice(0, 2), 16) || 0, parseInt(v.slice(2, 4), 16) || 0, parseInt(v.slice(4, 6), 16) || 0];
+  }
+  function kornKachel(farbe) {
+    let c = KORN.get(farbe);
+    if (!c) {
+      c = document.createElement('canvas'); c.width = c.height = 64;
+      const x = c.getContext('2d'), img = x.createImageData(64, 64), rgb = hexRgb(farbe);
+      let saat = 1234567;
+      const zufall = function () { saat = (saat * 16807) % 2147483647; return saat / 2147483647; };
+      for (let i = 0; i < 64 * 64; i++) {
+        const z = zufall();
+        img.data[i * 4] = rgb[0]; img.data[i * 4 + 1] = rgb[1]; img.data[i * 4 + 2] = rgb[2];
+        img.data[i * 4 + 3] = z < 0.16 ? 0 : Math.round(110 + zufall() * 145);
+      }
+      x.putImageData(img, 0, 0);
+      KORN.set(farbe, c);
+    }
+    return c;
+  }
+  function kornMuster(ctx, farbe) {
+    try {
+      const m = ctx.createPattern(kornKachel(farbe), 'repeat');
+      if (m && m.setTransform && typeof DOMMatrix === 'function') m.setTransform(new DOMMatrix().scale(0.3));
+      return m || farbe;
+    } catch (e) { return farbe; }
+  }
+  /* Einen Strich malen – gemeinsam für Seite, Live-Ebene, Vorschau und PDF */
+  /* auf dunklem Papier wird sehr dunkle Tinte automatisch hell dargestellt */
+  const TINTE_HELL = {};
+  function tinte(f, o) {
+    if (!o || !o.dunkel || !f) return f;
+    if (TINTE_HELL[f] !== undefined) return TINTE_HELL[f] || f;
+    const m = /^#([0-9a-f]{6})$/i.exec(f);
+    let r = null;
+    if (m) {
+      const n = parseInt(m[1], 16), R = n >> 16 & 255, G = n >> 8 & 255, B = n & 255;
+      const l = (0.2126 * R + 0.7152 * G + 0.0722 * B) / 255;
+      if (l < 0.22) r = '#F2F2F7';
+      else if (l < 0.4) r = '#' + [R, G, B].map(function (c) { return Math.min(255, Math.round(c + (255 - c) * 0.45)).toString(16).padStart(2, '0'); }).join('');
+    }
+    TINTE_HELL[f] = r || '';
+    return r || f;
+  }
+  function strichMalen(ctx, st, o) {
+    const F = tinte(st.f, o);
+    if (st.w === 'marker') {
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = F; ctx.lineWidth = st.b;
+      if (o && o.dunkel) { ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.42; ctx.stroke(pfad(st)); ctx.restore(); return; }
+      ctx.stroke(pfad(st)); return;
+    }
+    if (st.w === 'tape') {
+      const offen = o && o.tapeOffen && o.tapeOffen.has(st.id);
+      ctx.save();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = st.b; ctx.strokeStyle = F;
+      if (offen) { ctx.globalAlpha = 0.18; ctx.stroke(pfad(st)); }
+      else {
+        ctx.stroke(pfad(st));
+        ctx.globalAlpha = 0.22; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = st.b * 0.28; ctx.stroke(pfad(st));
+      }
+      ctx.restore(); return;
+    }
+    if (st.w === 'form') {
+      const pf = pfad(st);
+      if (st.fu && st.z) { ctx.save(); ctx.globalAlpha = st.fo == null ? 0.25 : st.fo; ctx.fillStyle = tinte(st.fu, o); ctx.fill(pf); ctx.restore(); }
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = F; ctx.lineWidth = st.b; ctx.stroke(pf);
+      if (st.k) {
+        ctx.fillStyle = F;
+        const k1 = kopfPfad(st.p, st.b, false); if (k1) ctx.fill(k1);
+        if (st.k === 2) { const k2 = kopfPfad(st.p, st.b, true); if (k2) ctx.fill(k2); }
+      }
+      return;
+    }
+    if (st.w === 'bleistift') {
+      ctx.save(); ctx.globalAlpha = st.a || 0.88; ctx.fillStyle = kornMuster(ctx, F); ctx.fill(pfad(st)); ctx.restore(); return;
+    }
+    ctx.fillStyle = F; ctx.fill(pfad(st));
   }
   function rahmen(st) {
     let r = RAHMEN.get(st);
@@ -371,7 +544,9 @@
         if (p[i] < x0) x0 = p[i]; if (p[i] > x1) x1 = p[i];
         if (p[i + 1] < y0) y0 = p[i + 1]; if (p[i + 1] > y1) y1 = p[i + 1];
       }
-      const h = st.b * (st.w === 'pinsel' ? 1 : 0.8);
+      let h = st.b * (st.w === 'pinsel' ? 1 : 0.8);
+      if (st.w === 'marker' || st.w === 'tape') h = st.b / 2 + 1;
+      if (st.w === 'form') h = st.b + (st.k ? Math.max(7, st.b * 4.2) : 0);
       r = { x0: x0 - h, y0: y0 - h, x1: x1 + h, y1: y1 + h };
       RAHMEN.set(st, r);
     }
@@ -440,7 +615,7 @@
 
   /* Durchkritzeln: Zickzack über vorhandener Schrift löscht diese */
   function kritzelOpfer(seite, st, roh) {
-    if (!W.kritzeln || st.w === 'marker' || !seite.striche.length) return null;
+    if (!W.kritzeln || TINTE.indexOf(st.w) < 0 || !seite.striche.length) return null;
     const p = roh && roh.length >= 9 ? neuAbtasten(roh, 2) : st.p, n = p.length / 3;
     if (n < 16) return null;
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
@@ -472,6 +647,7 @@
     const opfer = [], toleranz = Math.max(3, st.b * 1.6);
     let ux0 = Infinity, uy0 = Infinity, ux1 = -Infinity, uy1 = -Infinity;
     seite.striche.forEach(function (a) {
+      if (!W.kritzelAlles && TINTE.indexOf(a.w) < 0) return;
       const r = rahmen(a);
       if (r.x1 < bb.x0 || r.x0 > bb.x1 || r.y1 < bb.y0 || r.y0 > bb.y1) return;
       const q = a.p, m = q.length / 3, schritt = Math.max(1, Math.floor(m / 60));
@@ -490,16 +666,22 @@
   }
 
   /* Radierer */
+  function radierGruppe(w) {
+    if (w === 'bleistift') return 'bleistift';
+    if (w === 'marker') return 'marker';
+    if (w === 'tape') return 'tape';
+    return 'stift';
+  }
   function radieren(seite, x, y, r) {
-    const modus = W.radierModus;
+    const modus = W.radierModus, filter = W.radierFilter || {};
     let geaendert = false;
     const neu = [];
     seite.striche.forEach(function (st) {
-      if (modus === 'marker' && st.w !== 'marker') { neu.push(st); return; }
+      if (filter[radierGruppe(st.w)] === false) { neu.push(st); return; }
       const rr = r + st.b / 2, bb = rahmen(st);
       if (x < bb.x0 - rr || x > bb.x1 + rr || y < bb.y0 - rr || y > bb.y1 + rr) { neu.push(st); return; }
       const p = st.p, n = p.length / 3, rr2 = rr * rr;
-      if (modus !== 'praezise') {
+      if (modus === 'strich' || st.w === 'form' || st.w === 'tape') {
         for (let i = 0; i < n; i++) {
           const dx = p[i * 3] - x, dy = p[i * 3 + 1] - y;
           if (dx * dx + dy * dy <= rr2) { geaendert = true; return; }
@@ -520,7 +702,7 @@
       if (aktuell.length) teile.push(aktuell);
       geaendert = true;
       teile.forEach(function (t) {
-        if (t.length >= 6) neu.push({ id: uid(), w: st.w, f: st.f, b: st.b, p: t });
+        if (t.length >= 6) { const k = Object.assign({}, st, { id: uid(), p: t }); neu.push(k); }
       });
     });
     if (geaendert) seite.striche = neu;
@@ -531,39 +713,127 @@
      Zeichnen einer Seite (Bildschirm, Vorschau, PDF)
      ============================================================ */
   function papierFarbe(seite) { return PAPIER[seite.papier] || PAPIER.weiss; }
+  function istDunklesPapier(seite) { return seite.papier === 'dunkel' || seite.papier === 'schwarz'; }
   function zeichneVorlage(ctx, seite, ppu) {
-    const b = seite.b, h = seite.h, lw = Math.max(0.25, 0.9 / ppu);
+    const b = seite.b, h = seite.h, lw = Math.max(0.25, 0.9 / ppu), dunkel = istDunklesPapier(seite);
+    const LIN = dunkel ? '#4A5064' : '#C4D3EC', GITTER = dunkel ? '#3E4354' : '#D3DBE7', PUNKT = dunkel ? '#5A6075' : '#AEB8C6',
+      STARK = dunkel ? '#6A7290' : '#9DB3D8', ROT = dunkel ? '#8A4B57' : '#F2A9A9', TXT = dunkel ? '#8A90A6' : '#8E99AE';
+    const v = seite.v;
     ctx.lineWidth = lw;
-    if (seite.v === 'liniert') {
-      ctx.strokeStyle = '#C4D3EC'; ctx.beginPath();
-      for (let y = 86; y < h - 34; y += LINIE) { ctx.moveTo(0, y); ctx.lineTo(b, y); }
+    const linien = function (y0, y1, abstand, x0, x1) {
+      ctx.beginPath();
+      for (let y = y0; y < y1; y += abstand) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
       ctx.stroke();
-      ctx.strokeStyle = '#F2A9A9'; ctx.beginPath(); ctx.moveTo(70, 0); ctx.lineTo(70, h); ctx.stroke();
-    } else if (seite.v === 'kariert') {
-      ctx.strokeStyle = '#D3DBE7'; ctx.beginPath();
-      const ox = (b % KARO) / 2, oy = (h % KARO) / 2;
-      for (let x = ox; x <= b; x += KARO) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-      for (let y = oy; y <= h; y += KARO) { ctx.moveTo(0, y); ctx.lineTo(b, y); }
+    };
+    const gitter = function (abstand, farbe, x0, y0, x1, y1) {
+      ctx.strokeStyle = farbe; ctx.beginPath();
+      const ox = x0 + ((x1 - x0) % abstand) / 2, oy = y0 + ((y1 - y0) % abstand) / 2;
+      for (let x = ox; x <= x1 + 0.01; x += abstand) { ctx.moveTo(x, y0); ctx.lineTo(x, y1); }
+      for (let y = oy; y <= y1 + 0.01; y += abstand) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
       ctx.stroke();
-    } else if (seite.v === 'punktiert') {
-      ctx.fillStyle = '#AEB8C6';
+    };
+    const beschriftung = function (text, x, y, g) {
+      ctx.save(); ctx.fillStyle = TXT; ctx.font = '600 ' + (g || 7) + 'px ' + SCHRIFT; ctx.fillText(text, x, y); ctx.restore();
+    };
+    const rand = b < 500 ? 46 : 70;
+    if (v === 'liniert' || v === 'liniert_schmal') {
+      ctx.strokeStyle = LIN; linien(v === 'liniert' ? 86 : 72, h - 30, v === 'liniert' ? LINIE : 17, 0, b);
+      ctx.strokeStyle = ROT; ctx.beginPath(); ctx.moveTo(rand, 0); ctx.lineTo(rand, h); ctx.stroke();
+    } else if (v === 'kariert') gitter(KARO, GITTER, 0, 0, b, h);
+    else if (v === 'kariert_gross') gitter(KARO * 2, GITTER, 0, 0, b, h);
+    else if (v === 'millimeter') {
+      gitter(2.835, dunkel ? '#2F3342' : '#EBEFF5', 0, 0, b, h);
+      gitter(14.17, GITTER, 0, 0, b, h);
+      ctx.lineWidth = lw * 1.6; gitter(28.35, STARK, 0, 0, b, h); ctx.lineWidth = lw;
+    } else if (v === 'punktiert') {
+      ctx.fillStyle = PUNKT;
       const r = Math.max(0.55, 1.1 / ppu), ox = (b % KARO) / 2, oy = (h % KARO) / 2;
       ctx.beginPath();
       for (let x = ox; x <= b; x += KARO) {
         for (let y = oy; y <= h; y += KARO) { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2); }
       }
       ctx.fill();
-    } else if (seite.v === 'cornell') {
-      const kopf = 95, fuss = h - 160, rand = 170;
-      ctx.strokeStyle = '#C4D3EC'; ctx.beginPath();
-      for (let y = kopf + LINIE; y < fuss - 4; y += LINIE) { ctx.moveTo(rand, y); ctx.lineTo(b - 20, y); }
-      ctx.stroke();
-      ctx.strokeStyle = '#9DB3D8'; ctx.lineWidth = lw * 1.8; ctx.beginPath();
+    } else if (v === 'cornell') {
+      const kopf = 95, fuss = h - 160, links = Math.min(170, b * 0.29);
+      ctx.strokeStyle = LIN; linien(kopf + LINIE, fuss - 4, LINIE, links, b - 20);
+      ctx.strokeStyle = STARK; ctx.lineWidth = lw * 1.8; ctx.beginPath();
       ctx.moveTo(20, kopf); ctx.lineTo(b - 20, kopf);
-      ctx.moveTo(rand, kopf); ctx.lineTo(rand, fuss);
+      ctx.moveTo(links, kopf); ctx.lineTo(links, fuss);
       ctx.moveTo(20, fuss); ctx.lineTo(b - 20, fuss);
       ctx.stroke();
+      beschriftung('STICHWORTE', 24, kopf + 14); beschriftung('NOTIZEN', links + 6, kopf + 14); beschriftung('ZUSAMMENFASSUNG', 24, fuss + 14);
+    } else if (v === 'notizblock') {
+      ctx.fillStyle = dunkel ? '#2C3140' : '#EEF3FB'; ctx.fillRect(0, 0, b, 64);
+      ctx.strokeStyle = STARK; ctx.beginPath(); ctx.moveTo(0, 64); ctx.lineTo(b, 64); ctx.stroke();
+      beschriftung('THEMA', 20, 26); beschriftung('DATUM', b - 120, 26);
+      ctx.strokeStyle = LIN; linien(64 + LINIE, h - 30, LINIE, 20, b - 20);
+    } else if (v === 'spalte1') {
+      ctx.strokeStyle = STARK; ctx.lineWidth = lw * 1.6; ctx.beginPath(); ctx.moveTo(30, 70); ctx.lineTo(b - 30, 70); ctx.stroke(); ctx.lineWidth = lw;
+      beschriftung('DATUM', 30, 60);
+      ctx.strokeStyle = LIN; linien(70 + LINIE, h - 40, LINIE, 30, b - 30);
+    } else if (v === 'spalten3') {
+      const spalte = (b - 60) / 3;
+      ctx.strokeStyle = LIN;
+      for (let k = 0; k < 3; k++) linien(90, h - 40, LINIE, 30 + k * spalte + 6, 30 + (k + 1) * spalte - 6);
+      ctx.strokeStyle = STARK; ctx.beginPath();
+      for (let k = 1; k < 3; k++) { ctx.moveTo(30 + k * spalte, 70); ctx.lineTo(30 + k * spalte, h - 40); }
+      ctx.moveTo(30, 70); ctx.lineTo(b - 30, 70); ctx.stroke();
+    } else if (v === 'todo') {
+      beschriftung('TO-DOS', 30, 58, 10);
+      ctx.strokeStyle = STARK; ctx.beginPath(); ctx.moveTo(30, 68); ctx.lineTo(b - 30, 68); ctx.stroke();
+      ctx.strokeStyle = LIN;
+      for (let y = 68 + 30; y < h - 40; y += 30) {
+        ctx.beginPath(); ctx.moveTo(56, y); ctx.lineTo(b - 30, y); ctx.stroke();
+        ctx.strokeRect(32, y - 16, 12, 12);
+      }
+    } else if (v === 'woche') {
+      const tage = ['MONTAG', 'DIENSTAG', 'MITTWOCH', 'DONNERSTAG', 'FREITAG', 'SAMSTAG', 'SONNTAG', 'NOTIZEN'];
+      const kw = (b - 60) / 2, kh = (h - 100) / 4;
+      beschriftung('WOCHE', 30, 52, 11);
+      ctx.strokeStyle = STARK;
+      for (let k = 0; k < 8; k++) {
+        const x = 30 + (k % 2) * kw, y = 70 + Math.floor(k / 2) * kh;
+        ctx.strokeRect(x, y, kw, kh); beschriftung(tage[k], x + 8, y + 14);
+        ctx.save(); ctx.strokeStyle = LIN; linien(y + 22 + LINIE * 0.8, y + kh - 4, LINIE * 0.8, x + 8, x + kw - 8); ctx.restore();
+      }
+    } else if (v === 'monat') {
+      const tage = ['MO', 'DI', 'MI', 'DO', 'FR', 'SA', 'SO'], kw = (b - 60) / 7, kh = (h - 130) / 6;
+      beschriftung('MONAT', 30, 52, 11);
+      ctx.strokeStyle = STARK;
+      tage.forEach(function (t, k) { beschriftung(t, 30 + k * kw + 6, 84); });
+      for (let r = 0; r < 6; r++) for (let k = 0; k < 7; k++) ctx.strokeRect(30 + k * kw, 92 + r * kh, kw, kh);
+    } else if (v === 'noten' || v === 'tabs') {
+      const zeilen = v === 'noten' ? 5 : 6, abst = v === 'noten' ? 6.2 : 7.5, block = (zeilen - 1) * abst, frei = v === 'noten' ? 34 : 38;
+      ctx.strokeStyle = dunkel ? '#7A8098' : '#5E6678';
+      for (let y = 70; y + block < h - 40; y += block + frei) {
+        ctx.beginPath();
+        for (let z = 0; z < zeilen; z++) { ctx.moveTo(30, y + z * abst); ctx.lineTo(b - 30, y + z * abst); }
+        ctx.moveTo(30, y); ctx.lineTo(30, y + block); ctx.moveTo(b - 30, y); ctx.lineTo(b - 30, y + block);
+        ctx.stroke();
+        if (v === 'tabs') { ctx.save(); ctx.fillStyle = TXT; ctx.font = '700 7px ' + SCHRIFT; ['T', 'A', 'B'].forEach(function (c, z) { ctx.fillText(c, 34, y + 13 + z * 11); }); ctx.restore(); }
+      }
+    } else if (v === 'koordinaten') {
+      gitter(KARO, GITTER, 0, 0, b, h);
+      const cx = Math.round(b / 2 / KARO) * KARO + (b % KARO) / 2, cy = Math.round(h / 2 / KARO) * KARO + (h % KARO) / 2;
+      ctx.strokeStyle = dunkel ? '#A8AEC4' : '#55607A'; ctx.lineWidth = lw * 2; ctx.beginPath();
+      ctx.moveTo(14, cy); ctx.lineTo(b - 14, cy); ctx.moveTo(cx, h - 14); ctx.lineTo(cx, 14);
+      ctx.moveTo(b - 20, cy - 4); ctx.lineTo(b - 14, cy); ctx.lineTo(b - 20, cy + 4);
+      ctx.moveTo(cx - 4, 20); ctx.lineTo(cx, 14); ctx.lineTo(cx + 4, 20);
+      ctx.stroke(); ctx.lineWidth = lw;
+      beschriftung('x', b - 22, cy + 14, 9); beschriftung('y', cx + 6, 24, 9);
     }
+  }
+  /* kleine Vorschau einer Vorlage (für Galerie und Menü) */
+  function vorlageVorschau(c, v, papier, quer, format) {
+    const g = FORMATE[format] || FORMATE.a4, b = quer ? g[1] : g[0], h = quer ? g[0] : g[1];
+    const B = c.clientWidth || 70, k = B / b, dpr = Math.min(2, window.devicePixelRatio || 1);
+    c.width = Math.round(B * dpr); c.height = Math.round(h * k * dpr);
+    c.style.height = 'auto';
+    const ctx = c.getContext('2d');
+    ctx.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
+    const s = { b: b, h: h, v: v, papier: papier };
+    ctx.fillStyle = papierFarbe(s); ctx.fillRect(0, 0, b, h);
+    zeichneVorlage(ctx, s, k * dpr);
   }
   function zeilenUmbrechen(ctx, text, breite) {
     const zeilen = [];
@@ -591,15 +861,25 @@
     });
     return zeilen;
   }
-  function zeichneTextFeld(ctx, t) {
+  function zeichneTextFeld(ctx, t, o) {
+    if (t.bg) {
+      ctx.save();
+      ctx.font = (t.fett ? '700 ' : '400 ') + t.g + 'px ' + SCHRIFT;
+      const zeilenZ = t.text ? zeilenUmbrechen(ctx, t.text, Math.max(10, t.w - 20)).length : 0;
+      const hoehe = Math.max(t.zh || 150, zeilenZ * t.g * 1.3 + 20);
+      ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+      ctx.fillStyle = t.bg; ctx.fillRect(t.x, t.y, t.w, hoehe);
+      ctx.restore();
+    }
     if (!t.text) return;
     ctx.save();
     ctx.font = (t.fett ? '700 ' : '400 ') + t.g + 'px ' + SCHRIFT;
-    ctx.fillStyle = t.f;
+    ctx.fillStyle = t.bg ? t.f : tinte(t.f, o);
     ctx.textBaseline = 'alphabetic';
-    const zh = t.g * 1.3, links = t.x + 5, innen = Math.max(10, t.w - 10);
+    const pad = t.bg ? 10 : 5;
+    const zh = t.g * 1.3, links = t.x + pad, innen = Math.max(10, t.w - pad * 2);
     const zeilen = zeilenUmbrechen(ctx, t.text, innen);
-    zeilen.forEach(function (z, i) { ctx.fillText(z, links, t.y + 3 + zh * i + (zh + t.g * 0.72) / 2); });
+    zeilen.forEach(function (z, i) { ctx.fillText(z, links, t.y + (t.bg ? 8 : 3) + zh * i + (zh + t.g * 0.72) / 2); });
     ctx.restore();
   }
   function zeichneSeite(ctx, seite, ppu, o) {
@@ -610,13 +890,13 @@
     if (o.papier) { ctx.fillStyle = papierFarbe(seite); ctx.fillRect(0, 0, seite.b, seite.h); }
     if (seite.hg) {
       const im = o.bildHolen ? o.bildHolen(seite.hg) : bild(seite.hg);
-      if (im) ctx.drawImage(im, 0, 0, seite.b, seite.h);
+      if (im) bildMalen(ctx, im, 0, 0, seite.b, seite.h, seite.hgRot || 0);
     } else zeichneVorlage(ctx, seite, ppu);
     const sicht = o.sicht;
     seite.bilder.forEach(function (bi) {
       if (verst && verst.has(bi.id)) return;
       const im = o.bildHolen ? o.bildHolen(bi.d) : bild(bi.d);
-      if (im) ctx.drawImage(im, bi.x, bi.y, bi.w, bi.h);
+      if (im) bildMalen(ctx, im, bi.x, bi.y, bi.w, bi.h, bi.r || 0);
       else { ctx.fillStyle = 'rgba(120,130,150,.15)'; ctx.fillRect(bi.x, bi.y, bi.w, bi.h); }
     });
     const sichtbar = function (st) {
@@ -625,18 +905,13 @@
       const r = rahmen(st);
       return !(r.x1 < sicht.x0 || r.x0 > sicht.x1 || r.y1 < sicht.y0 || r.y0 > sicht.y1);
     };
+    const oS = Object.assign({}, o, { dunkel: istDunklesPapier(seite) });
     ctx.globalCompositeOperation = 'multiply';
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    seite.striche.forEach(function (st) {
-      if (st.w !== 'marker' || !sichtbar(st)) return;
-      ctx.strokeStyle = st.f; ctx.lineWidth = st.b; ctx.stroke(pfad(st));
-    });
+    seite.striche.forEach(function (st) { if (st.w === 'marker' && sichtbar(st)) strichMalen(ctx, st, oS); });
     ctx.globalCompositeOperation = 'source-over';
-    seite.striche.forEach(function (st) {
-      if (st.w === 'marker' || !sichtbar(st)) return;
-      ctx.fillStyle = st.f; ctx.fill(pfad(st));
-    });
-    if (o.mitText) seite.texte.forEach(function (t) { zeichneTextFeld(ctx, t); });
+    seite.striche.forEach(function (st) { if (st.w !== 'marker' && st.w !== 'tape' && sichtbar(st)) strichMalen(ctx, st, oS); });
+    if (o.mitText) seite.texte.forEach(function (t) { zeichneTextFeld(ctx, t, oS); });
+    seite.striche.forEach(function (st) { if (st.w === 'tape' && sichtbar(st)) strichMalen(ctx, st, oS); });
     ctx.restore();
   }
   async function seiteRendern(seite, pxBreite) {
@@ -666,6 +941,7 @@
     rafId = 0;
     if (!E) return;
     if (E.traegheit) traegheitSchritt(t);
+    if (E.anim) animSchritt(t);
     const p = E.planen;
     E.planen = {};
     if (p.haupt) zeichneHaupt();
@@ -673,27 +949,42 @@
     if (p.text || p.haupt) textSync();
     if (p.haupt && E.lineal) linealSync();
     if (p.haupt) seitenzahlAktualisieren();
-    if (E.traegheit) plane('haupt', 'live', 'text');
+    if (E.traegheit || E.anim) plane('haupt', 'live', 'text');
   }
 
   /* ---------- Layout und Kamera ---------- */
   function layout() {
-    let y = 0, refB = SEITE_B;
-    E.seiten.forEach(function (s) { refB = Math.max(refB, s.b); });
-    E.refB = refB;
+    E.horiz = !!W.horizontal;
+    let refB = SEITE_B, refH = SEITE_H;
+    E.seiten.forEach(function (s) { refB = Math.max(refB, s.b); refH = Math.max(refH, s.h); });
+    E.refB = refB; E.refH = refH;
+    let p = 0;
     E.pos = E.seiten.map(function (s) {
-      const r = { x: (refB - s.b) / 2, y: y, b: s.b, h: s.h };
-      y += s.h + LUECKE;
+      let r;
+      if (E.horiz) { r = { x: p, y: (refH - s.h) / 2, b: s.b, h: s.h }; p += s.b + LUECKE * 2; }
+      else { r = { x: (refB - s.b) / 2, y: p, b: s.b, h: s.h }; p += s.h + LUECKE; }
       return r;
     });
-    E.gesamtH = y;
+    if (E.horiz) { E.gesamtB = p; E.gesamtH = refH; } else { E.gesamtH = p; E.gesamtB = refB; }
   }
   function rand() { return E.vw < 600 ? 10 : 28; }
-  function passung() { return Math.max(0.05, (E.vw - 2 * rand()) / E.refB); }
+  function passung() {
+    if (E.horiz) return Math.max(0.05, Math.min((E.vw - 2 * rand()) / E.refB, (E.vh - 2 * rand()) / E.refH));
+    return Math.max(0.05, (E.vw - 2 * rand()) / E.refB);
+  }
   function skala() { return passung() * E.zoom; }
   function welt(sx, sy) { const s = skala(); return { x: sx / s + E.cam.x, y: sy / s + E.cam.y }; }
   function kameraBegrenzen() {
-    const s = skala(), pad = rand(), cw = E.refB * s;
+    const s = skala(), pad = rand();
+    if (E.horiz) {
+      const ch = E.refH * s;
+      if (ch + 2 * pad <= E.vh) E.cam.y = -(E.vh - ch) / 2 / s;
+      else E.cam.y = grenze(E.cam.y, -pad / s, E.refH - (E.vh - pad) / s);
+      const minX = -pad / s, maxX = Math.max(minX, E.gesamtB + NEU_H - (E.vw - pad) / s);
+      E.cam.x = grenze(E.cam.x, minX, maxX);
+      return;
+    }
+    const cw = E.refB * s;
     if (cw + 2 * pad <= E.vw) E.cam.x = -(E.vw - cw) / 2 / s;
     else E.cam.x = grenze(E.cam.x, -pad / s, E.refB - (E.vw - pad) / s);
     const minY = -16 / s;
@@ -708,6 +999,7 @@
     return -1;
   }
   function kachelRahmen() {
+    if (E.horiz) { const h = Math.min(E.refH, SEITE_H) * 0.6; return { x: E.gesamtB, y: (E.refH - h) / 2, b: NEU_H - 18, h: h }; }
     const b = Math.min(E.refB, SEITE_B);
     return { x: (E.refB - b) / 2, y: E.gesamtH, b: b, h: NEU_H - 18 };
   }
@@ -716,25 +1008,48 @@
     return w.x >= k.x && w.x <= k.x + k.b && w.y >= k.y && w.y <= k.y + k.h;
   }
   function aktuelleSeite() {
-    const mitte = E.cam.y + E.vh / 2 / skala();
+    const s = skala(), mx = E.cam.x + E.vw / 2 / s, my = E.cam.y + E.vh / 2 / s;
     let beste = 0, abst = Infinity;
     E.pos.forEach(function (r, i) {
-      const d = mitte < r.y ? r.y - mitte : (mitte > r.y + r.h ? mitte - r.y - r.h : 0);
+      const m = E.horiz ? mx : my, a = E.horiz ? r.x : r.y, l = E.horiz ? r.b : r.h;
+      const d = m < a ? a - m : (m > a + l ? m - a - l : 0);
       if (d < abst) { abst = d; beste = i; }
     });
     return beste;
   }
   function zuSeite(i) {
     i = grenze(i, 0, E.seiten.length - 1);
-    E.cam.y = E.pos[i].y - 16 / skala();
+    const s = skala();
+    if (E.horiz) E.cam.x = E.pos[i].x + E.pos[i].b / 2 - E.vw / 2 / s;
+    else E.cam.y = E.pos[i].y - 16 / s;
     kameraBegrenzen();
     planeAlles();
   }
   function seiteSichtbarMachen(i) {
     const r = E.pos[i], s = skala();
     if (!r) return;
+    if (E.horiz) {
+      const l = (r.x - E.cam.x) * s, re = (r.x + r.b - E.cam.x) * s;
+      if (re < 0 || l > E.vw) zuSeite(i);
+      return;
+    }
     const oben = (r.y - E.cam.y) * s, unten = (r.y + r.h - E.cam.y) * s;
     if (unten < 0 || oben > E.vh) zuSeite(i);
+  }
+  /* seitenweises Blättern: nach dem Wischen sanft zur nächsten Seite */
+  function seiteEinrasten(richtung) {
+    let i = aktuelleSeite();
+    if (richtung > 0) i = Math.min(E.seiten.length - 1, i + 1);
+    else if (richtung < 0) i = Math.max(0, i - 1);
+    const s = skala(), ziel = E.pos[i].x + E.pos[i].b / 2 - E.vw / 2 / s;
+    E.anim = { von: E.cam.x, nach: ziel, t0: performance.now(), dauer: 260 };
+    plane('haupt');
+  }
+  function animSchritt(t) {
+    const a = E.anim, u = grenze((t - a.t0) / a.dauer, 0, 1), e = 1 - Math.pow(1 - u, 3);
+    E.cam.x = a.von + (a.nach - a.von) * e;
+    kameraBegrenzen();
+    if (u >= 1) E.anim = null;
   }
   function verschieben(dx, dy) {
     const s = skala();
@@ -777,11 +1092,11 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = hgFarbe();
     ctx.fillRect(0, 0, c.width, c.height);
-    const y0 = E.cam.y, y1 = E.cam.y + E.vh / s;
+    const y0 = E.cam.y, y1 = E.cam.y + E.vh / s, x0 = E.cam.x, x1 = E.cam.x + E.vw / s;
     const dunkel = document.documentElement.getAttribute('data-thema') === 'dunkel';
     for (let i = 0; i < E.seiten.length; i++) {
       const r = E.pos[i];
-      if (r.y > y1 || r.y + r.h < y0) continue;
+      if (r.y > y1 || r.y + r.h < y0 || r.x > x1 || r.x + r.b < x0) continue;
       const seite = E.seiten[i];
       const ox = (r.x - E.cam.x) * s, oy = (r.y - E.cam.y) * s;
       ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -793,7 +1108,7 @@
       ctx.restore();
       ctx.setTransform(d * s, 0, 0, d * s, d * ox, d * oy);
       const sicht = { x0: E.cam.x - r.x - 20, y0: E.cam.y - r.y - 20, x1: E.cam.x - r.x + E.vw / s + 20, y1: E.cam.y - r.y + E.vh / s + 20 };
-      zeichneSeite(ctx, seite, d * s, { versteckt: E.versteckt, sicht: sicht });
+      zeichneSeite(ctx, seite, d * s, { versteckt: E.versteckt, sicht: sicht, tapeOffen: E.tapeOffen });
       if (seite.lz) {
         ctx.setTransform(d, 0, 0, d, 0, 0);
         const bx = ox + r.b * s - 38, bh = 30;
@@ -813,7 +1128,7 @@
       ctx.fillStyle = dunkel ? 'rgba(255,255,255,.6)' : 'rgba(40,50,90,.55)';
       ctx.font = '600 ' + Math.max(11, Math.min(16, 14 * E.zoom)) + 'px ' + SCHRIFT;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('+  Neue Seite', kx + kb / 2, ky + kh / 2);
+      ctx.fillText(kb < 140 ? '+' : '+  Neue Seite', kx + kb / 2, ky + kh / 2);
       ctx.restore();
     }
   }
@@ -829,11 +1144,16 @@
     const r = E.pos[i], s = skala(), d = E.dpr;
     ctx.setTransform(d * s, 0, 0, d * s, d * (r.x - E.cam.x) * s, d * (r.y - E.cam.y) * s);
   }
+  function liveStrich(st, p) {
+    const x = { id: 'live', w: st.art || st.wz, f: st.f, b: st.b, p: p, sp: st.sp, dr: st.dr, a: st.a };
+    if (st.formObj) Object.assign(x, st.formObj, { p: st.formObj.p });
+    return x;
+  }
   function zeichneLive() {
     const c = E.el.live, ctx = c.getContext('2d'), s = skala(), d = E.dpr;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
-    E.el.live.classList.toggle('nb-multiply', !!(E.strich && E.strich.wz === 'marker'));
+    E.el.live.classList.toggle('nb-multiply', !!(E.strich && E.strich.wz === 'marker' && !istDunklesPapier(E.seiten[E.strich.i])));
     if (E.strich) {
       const st = E.strich, seite = E.seiten[st.i];
       seitenTransform(ctx, st.i);
@@ -843,12 +1163,18 @@
       if (st.form) p = st.form;
       else if (st.gerade) p = [r[0], r[1], r[2], r[n - 3], r[n - 2], r[n - 1]];
       else p = st.glatt.concat([r[n - 3], r[n - 2], r[n - 1]]);
-      if (st.wz === 'marker') {
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = st.f; ctx.lineWidth = st.b;
-        ctx.stroke(linienPfad(p));
-      } else { ctx.fillStyle = st.f; ctx.fill(tintenPfad(p, st.wz, st.b)); }
+      strichMalen(ctx, liveStrich(st, p), { dunkel: istDunklesPapier(seite) });
       ctx.restore();
     }
+    if (E.formZug) {
+      const z = E.formZug, seite = E.seiten[z.i];
+      seitenTransform(ctx, z.i);
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, seite.b, seite.h); ctx.clip();
+      const o = formZugObjekt(z); o.id = 'live';
+      strichMalen(ctx, o, { dunkel: istDunklesPapier(seite) });
+      ctx.restore();
+    }
+    if (E.laserZug) laserZeichnen(ctx);
     if (E.radierer && E.radierer.pos) {
       ctx.setTransform(d, 0, 0, d, 0, 0);
       ctx.beginPath(); ctx.arc(E.radierer.pos.x, E.radierer.pos.y, aktuelleBreite('radierer'), 0, Math.PI * 2);
@@ -874,20 +1200,18 @@
         ctx.translate(a.bb.x0 + z.dx, a.bb.y0 + z.dy); ctx.scale(z.k, z.k); ctx.translate(-a.bb.x0, -a.bb.y0);
         seite.bilder.forEach(function (bi) {
           if (!a.b.has(bi.id)) return;
-          const im = bild(bi.d); if (im) ctx.drawImage(im, bi.x, bi.y, bi.w, bi.h);
+          const im = bild(bi.d); if (im) bildMalen(ctx, im, bi.x, bi.y, bi.w, bi.h, bi.r || 0);
         });
         ctx.globalCompositeOperation = 'multiply';
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        seite.striche.forEach(function (st) {
-          if (!a.s.has(st.id) || st.w !== 'marker') return;
-          ctx.strokeStyle = st.f; ctx.lineWidth = st.b; ctx.stroke(pfad(st));
-        });
+        seite.striche.forEach(function (st) { if (a.s.has(st.id) && st.w === 'marker') strichMalen(ctx, st, { dunkel: istDunklesPapier(seite) }); });
         ctx.globalCompositeOperation = 'source-over';
-        seite.striche.forEach(function (st) {
-          if (!a.s.has(st.id) || st.w === 'marker') return;
-          ctx.fillStyle = st.f; ctx.fill(pfad(st));
-        });
+        seite.striche.forEach(function (st) { if (a.s.has(st.id) && st.w !== 'marker') strichMalen(ctx, st, { tapeOffen: E.tapeOffen, dunkel: istDunklesPapier(seite) }); });
         ctx.restore();
+      }
+      if (E.ziehen && E.hilfslinien && E.hilfslinien.length) {
+        ctx.save(); ctx.strokeStyle = '#FF2D92'; ctx.lineWidth = 1 / s; ctx.setLineDash([4 / s, 3 / s]); ctx.beginPath();
+        E.hilfslinien.forEach(function (l) { if (l.x != null) { ctx.moveTo(l.x, 0); ctx.lineTo(l.x, seite.h); } else { ctx.moveTo(0, l.y); ctx.lineTo(seite.b, l.y); } });
+        ctx.stroke(); ctx.restore();
       }
       const x0 = a.bb.x0 + z.dx, y0 = a.bb.y0 + z.dy;
       const x1 = a.bb.x0 + (a.bb.x1 - a.bb.x0) * z.k + z.dx, y1 = a.bb.y0 + (a.bb.y1 - a.bb.y0) * z.k + z.dy;
@@ -944,6 +1268,7 @@
       if (!seite) return;
       Object.assign(seite, rueck ? a.vorher : a.nachher);
       schmutzig(seite);
+      layout(); kameraBegrenzen();
     }
   }
   function rueckgaengig() {
@@ -1075,9 +1400,13 @@
       if (h) { E.ziehen = { art: h, start: pt, dx: 0, dy: 0, k: 1 }; auswahlVerstecken(); plane('haupt', 'live', 'text'); return; }
       auswahlAufheben();
     }
+    if (E.nurLesen) { E.leseTipp = { pt: pt, letzt: pt }; return; }
     if (W.wz === 'text') { E.textTipp = { pt: pt }; return; }
+    if (W.wz === 'zettel') { E.textTipp = { pt: pt, zettel: true }; return; }
     if (W.wz === 'lasso') { lassoStart(w); return; }
     if (W.wz === 'radierer') { radiererStart(pt, w); return; }
+    if (W.wz === 'laser') { laserStart(pt); return; }
+    if (W.wz === 'formen' && W.formArt !== 'auto') { formZugStart(w); return; }
     strichStart(w, e, pt);
   }
   function aufMove(e) {
@@ -1087,7 +1416,10 @@
     if (e.pointerId === E.zeiger) {
       const evs = teilEvents(e);
       if (E.ziehen) { ziehenMove(punktAus(e)); return; }
+      if (E.leseTipp) { const q = punktAus(e); verschieben(q.x - E.leseTipp.letzt.x, q.y - E.leseTipp.letzt.y); E.leseTipp.letzt = q; return; }
       if (E.kachelTipp || E.textTipp) return;
+      if (E.laserZug) { evs.forEach(function (x) { laserMove(punktAus(x)); }); return; }
+      if (E.formZug) { formZugMove(punktAus(e)); return; }
       if (E.strich) { evs.forEach(function (x) { strichPunkt(x); }); plane('live'); return; }
       if (E.radierer) { evs.forEach(function (x) { radiererMove(x); }); return; }
       if (E.lasso) { evs.forEach(function (x) { lassoPunkt(punktAus(x)); }); plane('live'); }
@@ -1111,7 +1443,10 @@
       const tipp = Math.hypot(pt.x - start.x, pt.y - start.y) < 8;
       if (E.kachelTipp) { E.kachelTipp = false; if (tipp && inKachel(welt(pt.x, pt.y))) seiteHinzufuegen(E.seiten.length - 1); return; }
       if (E.ziehen) { ziehenEnde(); return; }
-      if (E.textTipp) { E.textTipp = null; if (tipp) textTipp(pt); return; }
+      if (E.leseTipp) { E.leseTipp = null; if (tipp) leseTippen(pt); return; }
+      if (E.textTipp) { const tt = E.textTipp; E.textTipp = null; if (tipp) { if (tt.zettel) zettelTipp(pt); else textTipp(pt); } return; }
+      if (E.laserZug && E.laserZug.an) { laserEnde(); return; }
+      if (E.formZug) { formZugEnde(); return; }
       if (E.strich) { if (e.type !== 'pointercancel' || E.strich.roh.length > 6) strichEnde(); else { E.strich = null; plane('live'); } return; }
       if (E.radierer) { radiererEnde(); return; }
       if (E.lasso) { lassoEnde(); return; }
@@ -1158,6 +1493,12 @@
   }
   function traegheitStarten() {
     const v = E.verlauf || [];
+    if (E.horiz && E.zoom <= 1.05) {
+      let sx = 0; v.forEach(function (x) { sx += x.dx; });
+      const dt = v.length > 1 ? (v[v.length - 1].t - v[0].t) || 16 : 16, vx = sx / dt;
+      seiteEinrasten(Math.abs(vx) > 0.3 ? (vx < 0 ? 1 : -1) : 0);
+      return;
+    }
     if (v.length < 2) return;
     const dt = v[v.length - 1].t - v[0].t || 16;
     let sx = 0, sy = 0;
@@ -1183,9 +1524,15 @@
   function fingerTipp(pt) {
     const w = welt(pt.x, pt.y);
     if (inKachel(w)) { seiteHinzufuegen(E.seiten.length - 1); return; }
-    if (W.wz === 'text') { textTipp(pt); return; }
+    if (W.wz === 'text' && !E.nurLesen) { textTipp(pt); return; }
+    if (W.wz === 'zettel' && !E.nurLesen) { zettelTipp(pt); return; }
     if (E.auswahl && !auswahlTreffer(pt)) auswahlAufheben();
     if (E.textAktiv) textBeenden();
+    else { const i = seiteBei(w.x, w.y); if (i >= 0) tapeUmschalten(E.seiten[i], w.x - E.pos[i].x, w.y - E.pos[i].y); }
+  }
+  function leseTippen(pt) {
+    const w = welt(pt.x, pt.y), i = seiteBei(w.x, w.y);
+    if (i >= 0) tapeUmschalten(E.seiten[i], w.x - E.pos[i].x, w.y - E.pos[i].y);
   }
   function aufRad(e) {
     if (!E) return;
@@ -1194,6 +1541,7 @@
     const pt = punktAus(e);
     const f = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? E.vh : 1);
     if (e.ctrlKey || e.metaKey) zoomen(Math.exp(-e.deltaY * f * 0.01), pt.x, pt.y);
+    else if (E.horiz) verschieben(-(e.deltaX || e.deltaY) * f, 0);
     else verschieben(-e.deltaX * f, -e.deltaY * f);
   }
 
@@ -1204,18 +1552,24 @@
     const i = seiteBei(w.x, w.y);
     if (i < 0) return;
     const r = E.pos[i], x = w.x - r.x, y = w.y - r.y, d = druck(e);
-    const wz = W.wz;
+    let wz = W.wz;
+    const autoForm = wz === 'formen';                        // Formen-Werkzeug „Automatisch“
+    if (autoForm) wz = 'formstift';
+    const es = einst(wz);
     E.strich = {
-      i: i, wz: wz, f: wz === 'marker' ? W.markerFarben[W.markerFarbe] : W.stiftFarben[W.stiftFarbe],
-      b: aktuelleBreite(wz), roh: [x, y, d], glatt: [x, y, d], t0: performance.now(),
-      gerade: wz === 'marker' && W.markerGerade && !kante, kante: kante, halt: pt ? { x: pt.x, y: pt.y } : null
+      i: i, wz: wz, autoForm: autoForm, f: autoForm ? aktuelleFarbe('formen') : aktuelleFarbe(wz),
+      b: autoForm ? aktuelleBreite('formen') : aktuelleBreite(wz), roh: [x, y, d], glatt: [x, y, d], t0: performance.now(),
+      sp: wz === 'fueller' ? es.sp : undefined, dr: wz === 'fueller' || wz === 'pinsel' ? es.dr : undefined,
+      gerade: ((wz === 'marker' && W.markerGerade) || (wz === 'tape' && W.tapeGerade)) && !kante, kante: kante,
+      halt: pt ? { x: pt.x, y: pt.y } : null, stab: es.st || 0
     };
     haltenPlanen();
     plane('live');
   }
   function haltenPlanen() {
     clearTimeout(E.haltTimer);
-    if (!W.formen || !E.strich || E.strich.kante || E.strich.gerade || E.strich.form) return;
+    const st = E.strich;
+    if (!W.formen || !st || st.kante || st.gerade || st.form || st.wz === 'tape') return;
     E.haltTimer = setTimeout(formPruefen, 550);
   }
   function formPruefen() {
@@ -1238,8 +1592,17 @@
     if (st.halt && Math.hypot(pt.x - st.halt.x, pt.y - st.halt.y) > 4) { st.halt = { x: pt.x, y: pt.y }; haltenPlanen(); }
     if (Math.hypot(x - st.roh[n - 3], y - st.roh[n - 2]) < 0.5 / skala()) { st.roh[n - 1] = d; return; }
     st.roh.push(x, y, d);
-    const g = st.glatt, m = g.length, a = E.zeigerTyp === 'pen' ? 0.62 : 0.45;
+    // Strich-Stabilisierung: 0 = direkt, 1 = stark geglättet
+    const g = st.glatt, m = g.length;
+    let a = 0.72 - 0.62 * grenze(st.stab, 0, 1);
+    if (E.zeigerTyp !== 'pen') a *= 0.75;
     g.push(g[m - 3] + (x - g[m - 3]) * a, g[m - 2] + (y - g[m - 2]) * a, g[m - 1] + (d - g[m - 1]) * 0.4);
+  }
+  function istTipp(st) {
+    const r = st.roh;
+    let maxD = 0;
+    for (let k = 3; k < r.length; k += 3) maxD = Math.max(maxD, Math.hypot(r[k] - r[0], r[k + 1] - r[1]));
+    return maxD * skala() < 4 && performance.now() - st.t0 < 450;
   }
   function strichEnde() {
     const st = E.strich;
@@ -1247,10 +1610,31 @@
     clearTimeout(E.haltTimer);
     if (!st) return;
     const seite = E.seiten[st.i], r = st.roh, n = r.length;
+    // kurzer Tipp auf ein Tape: aufdecken statt Punkt zeichnen
+    if (istTipp(st) && st.wz !== 'tape' && tapeUmschalten(seite, r[0], r[1])) { planeAlles(); return; }
     let p = st.form ? st.form : st.gerade ? [r[0], r[1], r[2], r[n - 3], r[n - 2], r[n - 1]] : st.glatt.concat([r[n - 3], r[n - 2], r[n - 1]]);
+    let formInfo = st.form ? { art: st.formArt } : null;
+    if (st.wz === 'formstift' && !st.form) {
+      const f = formErkennen(st.roh, skala());
+      if (f) { p = f.punkte; formInfo = f; }
+    }
     p = neuAbtasten(p, 2);
     const strich = { id: uid(), w: st.wz, f: st.f, b: st.b, p: p };
-    const opfer = st.gerade || st.form || st.kante ? null : kritzelOpfer(seite, strich, st.roh);
+    if (st.sp != null) strich.sp = st.sp;
+    if (st.dr != null) strich.dr = st.dr;
+    if (st.wz === 'bleistift') {
+      let summe = 0;
+      for (let k = 2; k < r.length; k += 3) summe += r[k];
+      strich.a = r2(0.55 + 0.4 * grenze(summe / (r.length / 3), 0, 1));
+    }
+    if (st.autoForm || (st.wz === 'formstift' && formInfo)) {            // als echtes Formobjekt speichern
+      if (formInfo) {
+        strich.w = 'form';
+        strich.z = /kreis|ellipse|dreieck|viereck/.test(formInfo.art) ? 1 : 0;
+        if (strich.z && W.formFuellen && st.autoForm) { strich.fu = st.f; strich.fo = W.formDeckkraft; }
+      } else if (st.autoForm) strich.w = 'formstift';
+    }
+    const opfer = st.gerade || st.form || st.kante || formInfo || TINTE.indexOf(st.wz) < 0 ? null : kritzelOpfer(seite, strich, st.roh);
     aendern(seite, function () {
       if (opfer) {
         const weg = new Set(opfer);
@@ -1258,9 +1642,200 @@
       } else seite.striche = seite.striche.concat([strich]);
     });
     if (opfer) toast(opfer.length === 1 ? 'Durchgekritzelt – gelöscht' : 'Durchgekritzelt – ' + opfer.length + ' Striche gelöscht', true);
+    else if (!formInfo && TINTE.indexOf(st.wz) >= 0 && !st.kante) umkreisenPruefen(st.i, strich);
     planeAlles();
   }
 
+  /* ---------- Tape: abdecken und aufdecken ---------- */
+  function tapeTreffer(seite, x, y) {
+    for (let k = seite.striche.length - 1; k >= 0; k--) {
+      const t = seite.striche[k];
+      if (t.w !== 'tape') continue;
+      const bb = rahmen(t);
+      if (x < bb.x0 || x > bb.x1 || y < bb.y0 || y > bb.y1) continue;
+      const q = t.p, rr = t.b / 2 + 2;
+      for (let j = 0; j + 3 < q.length; j += 3) {
+        if (abstandStrecke({ x: x, y: y }, { x: q[j], y: q[j + 1] }, { x: q[j + 3], y: q[j + 4] }) <= rr) return t;
+      }
+      if (q.length === 3 && Math.hypot(q[0] - x, q[1] - y) <= rr) return t;
+    }
+    return null;
+  }
+  function tapeUmschalten(seite, x, y) {
+    const t = tapeTreffer(seite, x, y);
+    if (!t) return false;
+    if (E.tapeOffen.has(t.id)) E.tapeOffen.delete(t.id); else E.tapeOffen.add(t.id);
+    plane('haupt');
+    return true;
+  }
+  function tapeAlleEntfernen() {
+    const i = aktuelleSeite(), seite = E.seiten[i];
+    if (!seite.striche.some(function (s) { return s.w === 'tape'; })) { toast('Auf dieser Seite ist kein Tape.'); return; }
+    aendern(seite, function () { seite.striche = seite.striche.filter(function (s) { return s.w !== 'tape'; }); });
+    planeAlles(); toast('Tape von der Seite entfernt', true);
+  }
+  function tapeAlleUmschalten(offen) {
+    E.seiten.forEach(function (s) { s.striche.forEach(function (t) { if (t.w === 'tape') { if (offen) E.tapeOffen.add(t.id); else E.tapeOffen.delete(t.id); } }); });
+    plane('haupt');
+  }
+
+  /* ---------- Umkreisen zum Auswählen ---------- */
+  function umkreisenPruefen(i, strich) {
+    if (!W.umkreisen) return;
+    const p = strich.p, n = p.length / 3;
+    if (n < 12) return;
+    const bb = rahmen(strich), diag = Math.hypot(bb.x1 - bb.x0, bb.y1 - bb.y0);
+    if (diag * skala() < 40) return;
+    const sehne = Math.hypot(p[0] - p[(n - 1) * 3], p[1] - p[(n - 1) * 3 + 1]);
+    if (sehne > diag * 0.25 || laenge(p) < diag * 2) return;
+    const poly = [];
+    for (let k = 0; k < p.length; k += 3) poly.push(p[k], p[k + 1]);
+    const seite = E.seiten[i];
+    const sel = { i: i, s: new Set(), t: new Set(), b: new Set(), bb: null };
+    seite.striche.forEach(function (st) {
+      if (st === strich) return;
+      const q = st.p, m = q.length / 3, schritt = Math.max(1, Math.floor(m / 30));
+      let drin = 0, ges = 0;
+      for (let k = 0; k < m; k += schritt) { ges++; if (imPolygon(q[k * 3], q[k * 3 + 1], poly)) drin++; }
+      if (ges && drin / ges >= 0.9) sel.s.add(st.id);
+    });
+    seite.texte.forEach(function (t) { if (imPolygon(t.x + t.w / 2, t.y + textHoehe(t) / 2, poly)) sel.t.add(t.id); });
+    seite.bilder.forEach(function (bi) { if (imPolygon(bi.x + bi.w / 2, bi.y + bi.h / 2, poly)) sel.b.add(bi.id); });
+    if (!sel.s.size && !sel.t.size && !sel.b.size) return;
+    const r = E.pos[i], s = skala();
+    const blase = document.createElement('button');
+    blase.className = 'nb-umkreis';
+    blase.innerHTML = icon('lasso') + 'Auswählen';
+    blase.style.left = ((r.x + bb.x1 - E.cam.x) * s + 6) + 'px';
+    blase.style.top = ((r.y + bb.y0 - E.cam.y) * s - 6) + 'px';
+    if (E.el.umkreis) E.el.umkreis.remove();
+    E.el.flaeche.appendChild(blase);
+    E.el.umkreis = blase;
+    const weg = function () { if (blase.isConnected) blase.remove(); if (E && E.el.umkreis === blase) E.el.umkreis = null; };
+    blase.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    blase.addEventListener('click', function () {
+      weg();
+      if (!E) return;
+      aendern(seite, function () { seite.striche = seite.striche.filter(function (x) { return x !== strich; }); });
+      sel.bb = auswahlRahmen(seite, sel);
+      E.auswahl = sel;
+      planeAlles();
+    });
+    setTimeout(weg, 3500);
+  }
+
+  /* ---------- Formen-Werkzeug: Form aufziehen ---------- */
+  function formErzeugen(art, x0, y0, x1, y1) {
+    const pts = [];
+    const dazu = function (x, y) { pts.push(r2(x), r2(y), 0.5); };
+    const xm = (x0 + x1) / 2, ym = (y0 + y1) / 2, w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+    const lx = Math.min(x0, x1), ty = Math.min(y0, y1), rx = Math.max(x0, x1), by = Math.max(y0, y1);
+    let z = 1, k = 0;
+    if (art === 'linie' || art === 'pfeil') {
+      const e = winkelEinrasten({ x: x0, y: y0 }, { x: x1, y: y1 });
+      dazu(x0, y0); dazu(e.x, e.y); z = 0; k = art === 'pfeil' ? 1 : 0;
+    } else if (art === 'winkel') {
+      dazu(x0, y0); dazu(x1, y0); dazu(x1, y1); z = 0; k = 1;
+    } else if (art === 'bogen') {
+      const dx = x1 - x0, dy = y1 - y0, cx = xm - dy * 0.3, cy = ym + dx * 0.3;
+      for (let t = 0; t <= 24; t++) {
+        const u = t / 24;
+        dazu((1 - u) * (1 - u) * x0 + 2 * (1 - u) * u * cx + u * u * x1, (1 - u) * (1 - u) * y0 + 2 * (1 - u) * u * cy + u * u * y1);
+      }
+      z = 0; k = 1;
+    } else if (art === 'rechteck') { dazu(lx, ty); dazu(rx, ty); dazu(rx, by); dazu(lx, by); dazu(lx, ty); }
+    else if (art === 'kreis') {
+      for (let t = 0; t <= 72; t++) { const u = t / 72 * Math.PI * 2; dazu(xm + Math.cos(u) * w / 2, ym + Math.sin(u) * h / 2); }
+    } else if (art === 'dreieck') { dazu(xm, ty); dazu(rx, by); dazu(lx, by); dazu(xm, ty); }
+    else if (art === 'raute') { dazu(xm, ty); dazu(rx, ym); dazu(xm, by); dazu(lx, ym); dazu(xm, ty); }
+    else if (art === 'rund') {
+      const rr = Math.min(w, h) * 0.22;
+      const ecke = function (cx, cy, a0) { for (let t = 0; t <= 8; t++) { const u = a0 + t / 8 * Math.PI / 2; dazu(cx + Math.cos(u) * rr, cy + Math.sin(u) * rr); } };
+      ecke(rx - rr, ty + rr, -Math.PI / 2); ecke(rx - rr, by - rr, 0); ecke(lx + rr, by - rr, Math.PI / 2); ecke(lx + rr, ty + rr, Math.PI);
+      dazu(rx - rr, ty);
+    }
+    return { p: pts, z: z, k: k };
+  }
+  function formZugStart(w) {
+    const i = seiteBei(w.x, w.y);
+    if (i < 0) return;
+    const r = E.pos[i];
+    E.formZug = { i: i, x0: w.x - r.x, y0: w.y - r.y, x1: w.x - r.x, y1: w.y - r.y };
+    plane('live');
+  }
+  function formZugMove(pt) {
+    const z = E.formZug, w = welt(pt.x, pt.y), r = E.pos[z.i];
+    z.x1 = w.x - r.x; z.y1 = w.y - r.y;
+    if (z.quadrat || (W.formArt === 'kreis' || W.formArt === 'rechteck') && E.shift) {
+      const d = Math.max(Math.abs(z.x1 - z.x0), Math.abs(z.y1 - z.y0));
+      z.x1 = z.x0 + Math.sign(z.x1 - z.x0 || 1) * d; z.y1 = z.y0 + Math.sign(z.y1 - z.y0 || 1) * d;
+    }
+    plane('live');
+  }
+  function formZugObjekt(z) {
+    const f = formErzeugen(W.formArt, z.x0, z.y0, z.x1, z.y1);
+    const o = { w: 'form', f: aktuelleFarbe('formen'), b: aktuelleBreite('formen'), p: f.p, z: f.z, k: f.k };
+    if (f.z && W.formFuellen) { o.fu = o.f; o.fo = W.formDeckkraft; }
+    return o;
+  }
+  function formZugEnde() {
+    const z = E.formZug;
+    E.formZug = null;
+    if (!z) return;
+    if (Math.hypot(z.x1 - z.x0, z.y1 - z.y0) * skala() < 8) {           // nur getippt: Standardgröße
+      const g = 60;
+      z.x0 -= g / 2; z.y0 -= g / 2; z.x1 = z.x0 + g; z.y1 = z.y0 + (/linie|pfeil|bogen|winkel/.test(W.formArt) ? 0 : g);
+    }
+    const o = formZugObjekt(z), seite = E.seiten[z.i];
+    o.id = uid(); o.p = neuAbtasten(o.p, 2);
+    aendern(seite, function () { seite.striche = seite.striche.concat([o]); });
+    planeAlles();
+  }
+
+  /* ---------- Laserpointer ---------- */
+  function laserStart(pt) {
+    E.laserZug = { punkte: [{ x: pt.x, y: pt.y, t: performance.now() }], an: true };
+    laserTakt();
+  }
+  function laserMove(pt) {
+    const z = E.laserZug;
+    if (!z) return;
+    z.punkte.push({ x: pt.x, y: pt.y, t: performance.now() });
+    if (W.laserArt === 'punkt') z.punkte = z.punkte.slice(-1);
+  }
+  function laserEnde() { if (E.laserZug) { E.laserZug.an = false; E.laserZug.ende = performance.now(); } }
+  function laserTakt() {
+    if (!E || !E.laserZug) return;
+    const z = E.laserZug, jetztT = performance.now();
+    if (W.laserArt === 'spur') z.punkte = z.punkte.filter(function (q) { return jetztT - q.t < 700; });
+    if (!z.an && (W.laserArt === 'punkt' ? jetztT - z.ende > 450 : !z.punkte.length)) { E.laserZug = null; plane('live'); return; }
+    plane('live');
+    requestAnimationFrame(laserTakt);
+  }
+  function laserZeichnen(ctx) {
+    const z = E.laserZug;
+    if (!z || !z.punkte.length) return;
+    const d = E.dpr, farbe = aktuelleFarbe('laser'), jetztT = performance.now();
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.shadowColor = farbe; ctx.shadowBlur = 12;
+    if (W.laserArt === 'spur' && z.punkte.length > 1) {
+      for (let k = 1; k < z.punkte.length; k++) {
+        const a = z.punkte[k - 1], b = z.punkte[k], alter = (jetztT - b.t) / 700;
+        ctx.globalAlpha = Math.max(0, 1 - alter);
+        ctx.strokeStyle = farbe; ctx.lineWidth = 5 * (1 - alter * 0.5);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+    }
+    const l = z.punkte[z.punkte.length - 1];
+    ctx.globalAlpha = z.an ? 1 : Math.max(0, 1 - (jetztT - (z.ende || jetztT)) / 450);
+    ctx.fillStyle = farbe;
+    ctx.beginPath(); ctx.arc(l.x, l.y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha *= 0.8;
+    ctx.beginPath(); ctx.arc(l.x, l.y, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
   /* ---------- Formen erkennen (Stift am Ende kurz halten) ---------- */
   function rdp(pts, eps) {                                     // Ramer-Douglas-Peucker
     if (pts.length < 3) return pts.slice();
@@ -1499,6 +2074,13 @@
       }
     }
     planeAlles();
+    if (W.radierAuto && W.vorRadierer && W.vorRadierer !== 'radierer') werkzeugWaehlen(W.vorRadierer);
+  }
+  function seiteLeeren(i) {
+    const seite = E.seiten[i];
+    if (!seite.striche.length && !seite.texte.length && !seite.bilder.length) { toast('Die Seite ist schon leer.'); return; }
+    aendern(seite, function () { seite.striche = []; seite.texte = []; seite.bilder = []; });
+    planeAlles(); toast('Seite geleert', true);
   }
 
   /* ---------- Lasso ---------- */
@@ -1506,11 +2088,12 @@
     const i = seiteBei(w.x, w.y);
     if (i < 0) return;
     const r = E.pos[i];
-    E.lasso = { i: i, pts: [w.x - r.x, w.y - r.y] };
+    E.lasso = { i: i, pts: [w.x - r.x, w.y - r.y], rechteck: W.lassoArt === 'rechteck', x0: w.x - r.x, y0: w.y - r.y };
   }
   function lassoPunkt(pt) {
     const l = E.lasso, w = welt(pt.x, pt.y), r = E.pos[l.i];
     const x = w.x - r.x, y = w.y - r.y, n = l.pts.length;
+    if (l.rechteck) { l.pts = [l.x0, l.y0, x, l.y0, x, y, l.x0, y, l.x0, l.y0]; return; }
     if (Math.hypot(x - l.pts[n - 2], y - l.pts[n - 1]) * skala() < 3) return;
     l.pts.push(x, y);
   }
@@ -1518,19 +2101,22 @@
     const l = E.lasso;
     E.lasso = null;
     if (!l || l.pts.length < 8) { plane('live'); return; }
-    const seite = E.seiten[l.i], poly = l.pts;
+    const seite = E.seiten[l.i], poly = l.pts, lf = W.lassoFilter || {};
     const sel = { i: l.i, s: new Set(), t: new Set(), b: new Set(), bb: null };
     seite.striche.forEach(function (st) {
+      const art = st.w === 'tape' ? 'tape' : st.w === 'form' ? (st.k ? 'pfeile' : 'formen') : 'schrift';
+      if (lf[art] === false) return;
       const q = st.p, m = q.length / 3, schritt = Math.max(1, Math.floor(m / 40));
       let drin = 0, ges = 0;
       for (let k = 0; k < m; k += schritt) { ges++; if (imPolygon(q[k * 3], q[k * 3 + 1], poly)) drin++; }
       if (ges && drin / ges >= 0.6) sel.s.add(st.id);
     });
     seite.texte.forEach(function (t) {
+      if (lf[t.bg ? 'zettel' : 'text'] === false) return;
       const h = textHoehe(t);
       if (imPolygon(t.x + t.w / 2, t.y + h / 2, poly)) sel.t.add(t.id);
     });
-    seite.bilder.forEach(function (bi) { if (imPolygon(bi.x + bi.w / 2, bi.y + bi.h / 2, poly)) sel.b.add(bi.id); });
+    if (lf.bilder !== false) seite.bilder.forEach(function (bi) { if (imPolygon(bi.x + bi.w / 2, bi.y + bi.h / 2, poly)) sel.b.add(bi.id); });
     if (!sel.s.size && !sel.t.size && !sel.b.size) { plane('live'); return; }
     sel.bb = auswahlRahmen(seite, sel);
     E.auswahl = sel;
@@ -1567,9 +2153,29 @@
     const a = E.auswahl;
     E.versteckt = new Set(Array.from(a.s).concat(Array.from(a.b)));
   }
+  function ausrichten(a, dx, dy) {
+    E.hilfslinien = [];
+    if (W.ausrichten === false) return { dx: dx, dy: dy };
+    const seite = E.seiten[a.i], tol = 6 / skala(), bb = a.bb;
+    const zx = [0, seite.b / 2, seite.b], zy = [0, seite.h / 2, seite.h];
+    let n = 0;
+    const kanten = function (x0, y0, x1, y1) { zx.push(x0, (x0 + x1) / 2, x1); zy.push(y0, (y0 + y1) / 2, y1); };
+    seite.striche.forEach(function (st) { if (a.s.has(st.id) || n++ > 400) return; const r = rahmen(st); kanten(r.x0, r.y0, r.x1, r.y1); });
+    seite.texte.forEach(function (t) { if (!a.t.has(t.id)) kanten(t.x, t.y, t.x + t.w, t.y + textHoehe(t)); });
+    seite.bilder.forEach(function (bi) { if (!a.b.has(bi.id)) kanten(bi.x, bi.y, bi.x + bi.w, bi.y + bi.h); });
+    const passen = function (eigene, ziele, d) {
+      let best = null;
+      eigene.forEach(function (e) { ziele.forEach(function (z) { const k = z - (e + d); if (Math.abs(k) < tol && (!best || Math.abs(k) < Math.abs(best.k))) best = { k: k, z: z }; }); });
+      return best;
+    };
+    const bx = passen([bb.x0, (bb.x0 + bb.x1) / 2, bb.x1], zx, dx), by = passen([bb.y0, (bb.y0 + bb.y1) / 2, bb.y1], zy, dy);
+    if (bx) { dx += bx.k; E.hilfslinien.push({ x: bx.z }); }
+    if (by) { dy += by.k; E.hilfslinien.push({ y: by.z }); }
+    return { dx: dx, dy: dy };
+  }
   function ziehenMove(pt) {
     const z = E.ziehen, s = skala();
-    if (z.art === 'verschieben') { z.dx = (pt.x - z.start.x) / s; z.dy = (pt.y - z.start.y) / s; }
+    if (z.art === 'verschieben') { const q = ausrichten(E.auswahl, (pt.x - z.start.x) / s, (pt.y - z.start.y) / s); z.dx = q.dx; z.dy = q.dy; }
     else {
       const q = auswahlBildschirm();
       const basis = (q.x1 - q.x0) + (q.y1 - q.y0);
@@ -1579,7 +2185,7 @@
   }
   function ziehenEnde() {
     const z = E.ziehen;
-    E.ziehen = null; E.versteckt = null;
+    E.ziehen = null; E.versteckt = null; E.hilfslinien = [];
     if (Math.abs(z.dx) > 0.3 || Math.abs(z.dy) > 0.3 || Math.abs(z.k - 1) > 0.005) auswahlTransformieren(z.dx, z.dy, z.k);
     planeAlles();
   }
@@ -1591,7 +2197,7 @@
         if (!a.s.has(st.id)) return st;
         const q = st.p.slice();
         for (let i = 0; i < q.length; i += 3) { q[i] = tx(q[i]); q[i + 1] = ty(q[i + 1]); }
-        return { id: st.id, w: st.w, f: st.f, b: r2(st.b * k), p: q };
+        return Object.assign({}, st, { b: r2(st.b * k), p: q });
       });
       if (a.t.size) seite.texte = seite.texte.map(function (t) {
         if (!a.t.has(t.id)) return t;
@@ -1630,7 +2236,7 @@
         if (!a.s.has(st.id)) return;
         const q = st.p.slice();
         for (let i = 0; i < q.length; i += 3) { q[i] = r2(q[i] + v); q[i + 1] = r2(q[i + 1] + v); }
-        const k2 = { id: uid(), w: st.w, f: st.f, b: st.b, p: q }; ns.push(k2); neu.s.add(k2.id);
+        const k2 = Object.assign({}, st, { id: uid(), p: q }); ns.push(k2); neu.s.add(k2.id);
       });
       seite.texte.forEach(function (t) {
         if (!a.t.has(t.id)) return;
@@ -1684,8 +2290,9 @@
     inhalt.textContent = t.text;
     el.appendChild(inhalt);
     el._text = t.text;
+    if (t.bg) el.classList.add('nb-zettel');
     el.addEventListener('pointerdown', function (ev) {
-      if (!E || W.wz !== 'text') return;
+      if (!E || E.nurLesen || !(W.wz === 'text' || (W.wz === 'zettel' && t.bg))) return;
       ev.stopPropagation();
       popoverSchliessen();
       if (E.textAktiv !== t.id) { if (E.textAktiv) textBeenden(); textAktivieren(t.id, false); }
@@ -1741,7 +2348,7 @@
     if (el) { el.firstChild.contentEditable = 'false'; el.classList.remove('aktiv'); try { el.firstChild.blur(); } catch (e) { } }
     const f = textFinden(id);
     if (f) {
-      if (!text.trim()) {
+      if (!text.trim() && !f.t.bg) {
         const oben = E.undo[E.undo.length - 1];
         if (E.textNeu === id && oben && oben.typ === 'inhalt' && oben.id === f.seite.id && oben.nachher.texte === f.seite.texte) {
           E.undo.pop();
@@ -1766,7 +2373,18 @@
     const seite = E.seiten[i], r = E.pos[i];
     const x = grenze(w.x - r.x - 5, 0, seite.b - 40), y = grenze(w.y - r.y - W.textGroesse * 0.8, 0, seite.h - 20);
     const t = { id: uid(), x: r2(x), y: r2(y), w: r2(Math.max(80, Math.min(260, seite.b - x - 14))), text: '',
-      g: W.textGroesse, f: W.stiftFarben[W.stiftFarbe], fett: W.textFett };
+      g: W.textGroesse, f: aktuelleFarbe('fueller'), fett: W.textFett };
+    aendern(seite, function () { seite.texte = seite.texte.concat([t]); });
+    textSync();
+    textAktivieren(t.id, true);
+  }
+  function zettelTipp(pt) {
+    if (E.textAktiv) { textBeenden(); return; }
+    const w = welt(pt.x, pt.y), i = seiteBei(w.x, w.y);
+    if (i < 0) return;
+    const seite = E.seiten[i], r = E.pos[i], g = 150;
+    const x = grenze(w.x - r.x - g / 2, 4, seite.b - g - 4), y = grenze(w.y - r.y - g / 2, 4, seite.h - g - 4);
+    const t = { id: uid(), x: r2(x), y: r2(y), w: g, zh: g, text: '', g: 13, f: '#1D1D1F', fett: false, bg: aktuelleFarbe('zettel') };
     aendern(seite, function () { seite.texte = seite.texte.concat([t]); });
     textSync();
     textAktivieren(t.id, true);
@@ -1805,8 +2423,11 @@
         el.style.width = w + 'px';
         const inhalt = el.firstChild;
         inhalt.style.fontSize = g + 'px';
-        inhalt.style.color = t.f;
+        inhalt.style.color = t.bg ? t.f : tinte(t.f, { dunkel: istDunklesPapier(seite) });
         inhalt.style.fontWeight = t.fett ? '700' : '400';
+        inhalt.style.background = t.bg || '';
+        inhalt.style.minHeight = t.bg ? (t.zh || 150) + 'px' : '';
+        el.classList.toggle('nb-zettel', !!t.bg);
         if (E.textAktiv !== t.id && el._text !== t.text) { inhalt.textContent = t.text; el._text = t.text; }
         const unsichtbar = sy > E.vh + 50 || sy + 2000 * s < -50;
         el.style.visibility = unsichtbar ? 'hidden' : '';
@@ -1820,7 +2441,7 @@
   function textRahmenSync() {
     const rah = E.el.textRahmen;
     const id = E.textAktiv;
-    if (!id || W.wz !== 'text') { rah.hidden = true; return; }
+    if (!id || !(W.wz === 'text' || W.wz === 'zettel')) { rah.hidden = true; return; }
     const f = textFinden(id), el = E.textElemente.get(id);
     if (!f || !el) { rah.hidden = true; return; }
     const s = skala(), r = E.pos[f.i], tz = E.textZiehen && E.textZiehen.id === id ? E.textZiehen : null;
@@ -1892,7 +2513,8 @@
     const vorbild = E.seiten[nach] || E.seiten[E.seiten.length - 1];
     const s = neueSeite(E.buch, {
       v: vorlage || (vorbild && !vorbild.hg ? vorbild.v : E.buch.vorlage),
-      papier: vorbild ? vorbild.papier : E.buch.papier
+      papier: vorbild ? vorbild.papier : E.buch.papier,
+      b: vorbild && !vorbild.hg ? vorbild.b : undefined, h: vorbild && !vorbild.hg ? vorbild.h : undefined
     });
     const index = Math.min(nach + 1, E.seiten.length);
     E.seiten.splice(index, 0, s);
@@ -1986,6 +2608,7 @@
     if (E.el.seitenzahl.textContent !== txt) E.el.seitenzahl.textContent = txt;
     const s = E.seiten[i];
     if (E.el.lesezeichen) E.el.lesezeichen.classList.toggle('gesetzt', !!(s && s.lz));
+    if (E.el.seitenleiste && E.leisteTab === 'seiten') seitenleisteMarkieren();
   }
 
   /* ---------- Bilder einfügen ---------- */
@@ -2043,6 +2666,39 @@
     kopieren: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/>',
     loeschen: '<path d="M4 7h16"/><path d="M9 7V4.8h6V7"/><path d="M6.5 7l1 13h9l1-13"/>',
     schliessen: '<path d="M6 6l12 12M18 6L6 18"/>',
+    bleistift: '<path d="M4 20l1.2-4.6L15.6 5a2 2 0 012.8 0l.6.6a2 2 0 010 2.8L8.6 18.8z"/><path d="M5.2 15.4l3.4 3.4"/><path d="M14 6.6l3.4 3.4"/>',
+    tape: '<path d="M3.6 9.5l15.5-5.6 1.3 3.6-15.5 5.6z"/><path d="M5 13.1l1.6 4.6 15.5-5.6-1.7-4.6"/><path d="M8.5 9.6l1.2 3.4M12.5 8.2l1.2 3.4M16.5 6.7l1.2 3.4" opacity=".55"/>',
+    formstift: '<path d="M4 20l1-4 8.5-8.5 3 3L8 19z"/><path d="M12 9l3 3"/><rect x="15" y="15" width="5.5" height="5.5" rx="1"/>',
+    formen: '<rect x="3.5" y="3.5" width="8" height="8" rx="1.5"/><circle cx="16.5" cy="16.5" r="4"/><path d="M16.5 3.2l4.6 7.6h-9.2z"/>',
+    zettel: '<path d="M4 4h16v11l-5 5H4z"/><path d="M15 20v-5h5"/>',
+    laser: '<path d="M4.5 19.5l9-9 2 2-9 9z"/><path d="M14.5 9.5l5-5"/><circle cx="20" cy="4" r="1.7" fill="currentColor"/>',
+    audio: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21M8.5 21h7"/>',
+    filter: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+    chevron: '<path d="M7 10l5 5 5-5"/>',
+    chevronrechts: '<path d="M10 7l5 5-5 5"/>',
+    plus: '<path d="M12 6v12M6 12h12"/>',
+    auge: '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+    rechteckauswahl: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/>',
+    strichradierer: '<path d="M8.4 18L3.6 13.2a1.8 1.8 0 010-2.5L10.7 3.6a1.8 1.8 0 012.5 0l5.2 5.2a1.8 1.8 0 010 2.5L11.2 18z"/><path d="M3 21.5c4-2.5 9 1 18-1.5"/>',
+    fuellen: '<path d="M5 11l7-7 7 7-7 7z"/><path d="M5 11h14"/><path d="M20.5 15c0 1.5 1 2.2 1 3.2a1 1 0 01-2 0c0-1 1-1.7 1-3.2z" fill="currentColor"/>',
+    f_auto: '<path d="M4 17c2-8 5-11 9-9s4 7 7 3"/><path d="M17.5 2.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" fill="currentColor"/>',
+    f_linie: '<path d="M5 19L19 5"/>',
+    f_pfeil: '<path d="M5 19L19 5"/><path d="M11 5h8v8"/>',
+    f_winkel: '<path d="M4 6h12v12"/><path d="M12 14l4 4 4-4"/>',
+    f_bogen: '<path d="M4 18C6 8 13 5 19 7"/><path d="M14 3.5l5 3.5-3.2 5"/>',
+    f_rechteck: '<rect x="4" y="6" width="16" height="12" rx="1"/>',
+    f_kreis: '<circle cx="12" cy="12" r="8"/>',
+    f_dreieck: '<path d="M12 4l8.5 15h-17z"/>',
+    f_raute: '<path d="M12 3l9 9-9 9-9-9z"/>',
+    f_rund: '<rect x="3.5" y="6" width="17" height="12" rx="5"/>',
+    teilen: '<path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>',
+    liste: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/>',
+    raster: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
+    play: '<path d="M8 5.5v13l11-6.5z" fill="currentColor"/>',
+    pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>',
+    seitenleiste: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
+    lesen: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 016.5 18H20v3H6.5"/>',
+    drehen: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>',
     suche: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
     ordner: '<path d="M3.5 7.5a2 2 0 012-2h4l2 2.2h7a2 2 0 012 2v8.3a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/>',
     lesezeichen: '<path d="M7 3.5h10a1 1 0 011 1V20.5l-6-4.2-6 4.2V4.5a1 1 0 011-1z"/>',
@@ -2058,68 +2714,105 @@
     E.el.undo.disabled = !E.undo.length;
     E.el.redo.disabled = !E.redo.length;
   }
+  const HAUPT = ['lasso', 'stift', 'radierer', 'text', 'bild', 'formen', 'zettel', 'laser', 'audio'];
+  function hauptLeisteHTML() {
+    return HAUPT.map(function (h) {
+      const ic = h === 'stift' ? W.letzterStift : h;
+      return '<button class="nb-knopf" data-nb-haupt="' + h + '" title="' + NAMEN[h] + '" aria-label="' + NAMEN[h] + '"' + (W.leiste[h] === false ? ' hidden' : '') + '>' +
+        icon(ic) + (h === 'stift' ? '<span class="nb-farbstrich"></span>' : '') + '</button>';
+    }).join('') + '<button class="nb-knopf" data-nb-aktion="lineal" title="Lineal" aria-label="Lineal">' + icon('lineal') + '</button>';
+  }
   function werkzeugWaehlen(wz) {
     if (!E) return;
+    if (wz === 'stift') wz = W.letzterStift || W.stiftArt;
+    if (wz === 'bild') { E.el.bildDatei.click(); return; }
+    if (wz === 'audio') { audioUmschalten(); return; }
     if (W.wz !== wz) { textBeenden(); auswahlAufheben(); }
+    if (wz === 'radierer' && W.wz !== 'radierer') W.vorRadierer = W.wz;
     W.wz = wz;
+    if (STIFTGRUPPE.indexOf(wz) >= 0) W.letzterStift = wz;
+    if (STIFTARTEN.indexOf(wz) >= 0) W.stiftArt = wz;
     werkzeugSpeichern();
     E.el.root.classList.toggle('wz-text', wz === 'text');
-    $$(E.el.root, '[data-nb-wz]').forEach(function (b) { b.classList.toggle('aktiv', b.getAttribute('data-nb-wz') === wz); });
+    E.el.root.classList.toggle('wz-zettel', wz === 'zettel');
+    const haupt = hauptWerkzeug(wz);
+    $$(E.el.root, '[data-nb-haupt]').forEach(function (b) {
+      const h = b.getAttribute('data-nb-haupt');
+      b.classList.toggle('aktiv', h === haupt);
+      if (h === 'stift') { const s = b.querySelector('svg'); if (s) s.outerHTML = icon(W.letzterStift); }
+    });
     werkzeugFarbstriche();
     zeile2Zeichnen();
     plane('live', 'text');
   }
   function werkzeugFarbstriche() {
-    $$(E.el.root, '[data-nb-wz]').forEach(function (b) {
-      const wz = b.getAttribute('data-nb-wz'), s = b.querySelector('.nb-farbstrich');
-      if (!s) return;
-      s.style.background = wz === 'marker' ? W.markerFarben[W.markerFarbe] : W.stiftFarben[W.stiftFarbe];
-    });
+    const b = E.el.root.querySelector('[data-nb-haupt=stift] .nb-farbstrich');
+    if (b) b.style.background = aktuelleFarbe(W.letzterStift);
   }
   function punktGroesse(wz, b) {
-    if (wz === 'marker') return Math.min(20, 5 + b * 0.55);
+    if (wz === 'marker' || wz === 'tape') return Math.min(20, 4 + b * 0.6);
     if (wz === 'radierer') return Math.min(22, 6 + b * 0.5);
     return Math.min(16, 3 + b * 2.3);
   }
+  function breitenHTML(w) {
+    return '<div class="nb-gruppe">' + W.breiten[w].map(function (b, i) {
+      const g = punktGroesse(w, b);
+      return '<button class="nb-breite' + (i === W.breite[w] ? ' aktiv' : '') + '" data-nb-breite="' + w + ':' + i + '" aria-label="Stärke ' + (i + 1) + '">' +
+        (w === 'radierer' ? '<span style="width:' + g + 'px;height:' + g + 'px;background:transparent;border:1.6px solid currentColor"></span>'
+          : '<i style="height:' + Math.max(1.5, Math.min(9, g / 2)) + 'px"></i>') + '</button>';
+    }).join('') + '</div>';
+  }
+  function farbenHTML(g, aktivIndex) {
+    return '<div class="nb-gruppe">' + W.farben[g].map(function (f, i) {
+      return '<button class="nb-farbe' + (i === aktivIndex ? ' aktiv' : '') + '" data-nb-farbe="' + g + ':' + i + '" style="--f:' + f + '" aria-label="Farbe ' + (i + 1) + '"></button>';
+    }).join('') + '<button class="nb-farbe nb-farbe-plus" data-nb-farbplus="' + g + '" aria-label="Weitere Farben">' + icon('plus') + '</button></div>';
+  }
+  function trenner() { return '<span class="nb-trenner"></span>'; }
   function zeile2Zeichnen() {
     if (!E) return;
-    const z = E.el.zeile2, wz = W.wz;
+    const z = E.el.zeile2, wz = W.wz, haupt = hauptWerkzeug(wz);
     let h = '';
-    const farbKnoepfe = function (liste, aktiv, art) {
-      return '<div class="nb-gruppe">' + liste.map(function (f, i) {
-        return '<button class="nb-farbe' + (i === aktiv ? ' aktiv' : '') + '" data-nb-farbe="' + art + ':' + i + '" style="--f:' + f + '" aria-label="Farbe ' + (i + 1) + '"></button>';
-      }).join('') + '</div>';
-    };
-    const breitenKnoepfe = function (w) {
-      return '<div class="nb-gruppe">' + W.breiten[w].map(function (b, i) {
-        const g = punktGroesse(w, b);
-        return '<button class="nb-breite' + (i === W.breite[w] ? ' aktiv' : '') + '" data-nb-breite="' + i + '" aria-label="Stärke ' + (i + 1) + '">' +
-          '<span style="width:' + g + 'px;height:' + g + 'px;' + (w === 'radierer' ? 'background:transparent;border:1.6px solid currentColor' : '') + '"></span></button>';
-      }).join('') + '</div>';
-    };
-    if (STIFTE.indexOf(wz) >= 0) {
-      h = '<span class="nb-name">' + NAMEN[wz] + '</span>' + farbKnoepfe(W.stiftFarben, W.stiftFarbe, 'stift') + '<span class="nb-trenner"></span>' + breitenKnoepfe(wz);
-    } else if (wz === 'marker') {
-      h = '<span class="nb-name">Textmarker</span>' + farbKnoepfe(W.markerFarben, W.markerFarbe, 'marker') + '<span class="nb-trenner"></span>' + breitenKnoepfe('marker') +
-        '<span class="nb-trenner"></span><button class="nb-schalter' + (W.markerGerade ? ' aktiv' : '') + '" data-nb-gerade="1">Gerade Linie</button>';
+    if (E.nurLesen) {
+      h = '<span class="nb-name">Nur lesen</span><span class="nb-tipp">Blättern, zoomen und Tape aufdecken – Schreiben ist gesperrt.</span>' +
+        '<button class="nb-schalter aktiv" data-nb-nurlesen="1">Bearbeiten</button>';
+    } else if (haupt === 'stift') {
+      const art = STIFTARTEN.indexOf(wz) >= 0 ? wz : W.stiftArt;
+      h = '<div class="nb-gruppe nb-unterwz">' +
+        '<button class="nb-uwz' + (STIFTARTEN.indexOf(wz) >= 0 ? ' aktiv' : '') + '" data-nb-uwz="' + art + '" title="' + NAMEN[art] + '">' + icon(art) + '<span class="nb-pfeilchen">' + icon('chevron') + '</span></button>' +
+        ['bleistift', 'marker', 'tape', 'formstift'].map(function (u) {
+          return '<button class="nb-uwz' + (wz === u ? ' aktiv' : '') + '" data-nb-uwz="' + u + '" title="' + NAMEN[u] + '">' + icon(u) + '</button>';
+        }).join('') + '</div>' + trenner() + breitenHTML(wz) + trenner() + farbenHTML(farbGruppe(wz), W.farbe[farbGruppe(wz)]);
+      if (wz === 'tape') h += trenner() + '<button class="nb-mini" data-nb-tapeall="1" title="Alle Tapes aufdecken/abdecken">' + icon('auge') + '</button>';
     } else if (wz === 'radierer') {
-      h = '<span class="nb-name">Radierer</span>' + breitenKnoepfe('radierer') + '<span class="nb-trenner"></span><div class="nb-segment">' +
-        [['praezise', 'Präzise'], ['strich', 'Ganzer Strich'], ['marker', 'Nur Textmarker']].map(function (m) {
-          return '<button class="' + (W.radierModus === m[0] ? 'aktiv' : '') + '" data-nb-radmodus="' + m[0] + '">' + m[1] + '</button>';
-        }).join('') + '</div>';
+      h = '<button class="nb-schalter nb-dropdown" data-nb-radmenue="1">' + icon('radierer') + (W.radierModus === 'strich' ? 'Strich' : 'Standard') + icon('chevron') + '</button>' +
+        '<button class="nb-mini" data-nb-radfilter="1" title="Erweiterte Einstellungen">' + icon('filter') + '</button>' + trenner() + breitenHTML('radierer');
     } else if (wz === 'lasso') {
-      h = '<span class="nb-name">Lasso</span><span class="nb-tipp">Einkreisen, dann ziehen zum Verschieben · Ecke ziehen zum Vergrößern</span>';
+      h = '<div class="nb-segment">' + [['frei', 'Freihand'], ['rechteck', 'Rechteckig']].map(function (m) {
+        return '<button class="' + (W.lassoArt === m[0] ? 'aktiv' : '') + '" data-nb-lassoart="' + m[0] + '">' + icon(m[0] === 'frei' ? 'lasso' : 'rechteckauswahl') + m[1] + '</button>';
+      }).join('') + '</div><button class="nb-mini" data-nb-lassofilter="1" title="Was wird ausgewählt?">' + icon('filter') + '</button>' +
+        '<span class="nb-tipp">Einkreisen · ziehen zum Verschieben · Ecke zum Vergrößern</span>';
+    } else if (wz === 'formen') {
+      h = '<div class="nb-gruppe nb-unterwz">' + FORM_ARTEN.map(function (f) {
+        return '<button class="nb-uwz' + (W.formArt === f[0] ? ' aktiv' : '') + '" data-nb-formart="' + f[0] + '" title="' + f[1] + '">' + icon('f_' + f[0]) + '</button>';
+      }).join('') + '</div>' + trenner() + breitenHTML('formen') + trenner() + farbenHTML('formen', W.farbe.formen) +
+        '<button class="nb-mini' + (W.formFuellen ? ' aktiv' : '') + '" data-nb-formfuellung="1" title="Füllung">' + icon('fuellen') + '</button>';
+    } else if (wz === 'zettel') {
+      h = '<span class="nb-name">Notizzettel</span>' + farbenHTML('zettel', W.farbe.zettel) + '<span class="nb-tipp">Auf die Seite tippen, um einen Zettel anzulegen</span>';
+    } else if (wz === 'laser') {
+      h = '<div class="nb-segment">' + [['spur', 'Spur'], ['punkt', 'Punkt']].map(function (m) {
+        return '<button class="' + (W.laserArt === m[0] ? 'aktiv' : '') + '" data-nb-laserart="' + m[0] + '">' + m[1] + '</button>';
+      }).join('') + '</div>' + trenner() + farbenHTML('laser', W.farbe.laser);
     } else if (wz === 'text') {
       let g = W.textGroesse, fett = W.textFett, farbe = -1;
       if (E.textAktiv) {
         const f = textFinden(E.textAktiv);
-        if (f) { g = f.t.g; fett = f.t.fett; farbe = W.stiftFarben.indexOf(f.t.f); }
-      } else farbe = W.stiftFarbe;
+        if (f) { g = f.t.g; fett = f.t.fett; farbe = W.farben.stift.indexOf(f.t.f); }
+      } else farbe = W.farbe.stift;
       h = '<span class="nb-name">Text</span><div class="nb-gruppe"><button class="nb-mini" data-nb-textgroesse="-1" aria-label="Kleiner">A−</button>' +
         '<span class="nb-wert">' + Math.round(g) + ' pt</span><button class="nb-mini" data-nb-textgroesse="1" aria-label="Größer">A+</button></div>' +
-        '<button class="nb-schalter nb-fett' + (fett ? ' aktiv' : '') + '" data-nb-fett="1">B</button><span class="nb-trenner"></span>' +
-        farbKnoepfe(W.stiftFarben, farbe, 'text') +
-        (E.textAktiv ? '<span class="nb-trenner"></span><button class="nb-mini nb-rot" data-nb-textweg="1">Löschen</button>' : '<span class="nb-tipp">Auf die Seite tippen, um ein Textfeld anzulegen</span>');
+        '<button class="nb-schalter nb-fett' + (fett ? ' aktiv' : '') + '" data-nb-fett="1">B</button>' + trenner() +
+        farbenHTML('stift', farbe) +
+        (E.textAktiv ? trenner() + '<button class="nb-mini nb-rot" data-nb-textweg="1">Löschen</button>' : '<span class="nb-tipp">Auf die Seite tippen, um ein Textfeld anzulegen</span>');
     }
     z.innerHTML = h;
     $$(z, 'button').forEach(function (b) { b.addEventListener('pointerdown', function (e) { if (E && E.textAktiv) e.preventDefault(); }); });
@@ -2127,25 +2820,38 @@
   function zeile2Klick(e) {
     const b = e.target.closest('button');
     if (!b || !E) return;
+    if (b.hasAttribute('data-nb-nurlesen')) { nurLesenUmschalten(); return; }
+    if (b.hasAttribute('data-nb-uwz')) {
+      const u = b.getAttribute('data-nb-uwz');
+      if (W.wz === u || (STIFTARTEN.indexOf(u) >= 0 && STIFTARTEN.indexOf(W.wz) >= 0 && e.target.closest('.nb-pfeilchen'))) stiftPopover(b, W.wz);
+      else werkzeugWaehlen(u);
+      return;
+    }
     if (b.hasAttribute('data-nb-farbe')) {
-      const teile = b.getAttribute('data-nb-farbe').split(':'), art = teile[0], i = Number(teile[1]);
-      if (art === 'marker') {
-        if (W.markerFarbe === i) farbPopover(b, 'marker', i); else W.markerFarbe = i;
-      } else if (art === 'text') {
-        if (E.textAktiv) { W.stiftFarbe = i; textFormat({ f: W.stiftFarben[i] }); }
-        else if (W.stiftFarbe === i) farbPopover(b, 'stift', i); else W.stiftFarbe = i;
-      } else {
-        if (W.stiftFarbe === i) farbPopover(b, 'stift', i); else W.stiftFarbe = i;
-      }
+      const t = b.getAttribute('data-nb-farbe').split(':'), g = t[0], i = Number(t[1]);
+      if (W.wz === 'text' && E.textAktiv) { W.farbe.stift = i; textFormat({ f: W.farben.stift[i] }); }
+      else if (W.farbe[g] === i) farbPopover(b, g, i);
+      else W.farbe[g] = i;
       werkzeugSpeichern(); werkzeugFarbstriche(); zeile2Zeichnen(); return;
     }
+    if (b.hasAttribute('data-nb-farbplus')) { const g = b.getAttribute('data-nb-farbplus'); farbPopover(b, g, W.farbe[g]); return; }
     if (b.hasAttribute('data-nb-breite')) {
-      const i = Number(b.getAttribute('data-nb-breite')), wz = W.wz;
+      const t = b.getAttribute('data-nb-breite').split(':'), wz = t[0], i = Number(t[1]);
       if (W.breite[wz] === i) breitePopover(b, wz, i); else W.breite[wz] = i;
       werkzeugSpeichern(); zeile2Zeichnen(); plane('live'); return;
     }
-    if (b.hasAttribute('data-nb-gerade')) { W.markerGerade = !W.markerGerade; werkzeugSpeichern(); zeile2Zeichnen(); return; }
-    if (b.hasAttribute('data-nb-radmodus')) { W.radierModus = b.getAttribute('data-nb-radmodus'); werkzeugSpeichern(); zeile2Zeichnen(); return; }
+    if (b.hasAttribute('data-nb-tapeall')) {
+      const alle = []; E.seiten.forEach(function (s) { s.striche.forEach(function (t) { if (t.w === 'tape') alle.push(t.id); }); });
+      const offen = alle.some(function (id) { return !E.tapeOffen.has(id); });
+      tapeAlleUmschalten(offen); toast(offen ? 'Alle Tapes aufgedeckt' : 'Alle Tapes abgedeckt'); return;
+    }
+    if (b.hasAttribute('data-nb-radmenue')) { radiererMenue(b); return; }
+    if (b.hasAttribute('data-nb-radfilter')) { radiererFilterPopover(b); return; }
+    if (b.hasAttribute('data-nb-lassoart')) { W.lassoArt = b.getAttribute('data-nb-lassoart'); werkzeugSpeichern(); zeile2Zeichnen(); return; }
+    if (b.hasAttribute('data-nb-lassofilter')) { lassoFilterPopover(b); return; }
+    if (b.hasAttribute('data-nb-formart')) { W.formArt = b.getAttribute('data-nb-formart'); werkzeugSpeichern(); zeile2Zeichnen(); return; }
+    if (b.hasAttribute('data-nb-formfuellung')) { fuellungPopover(b); return; }
+    if (b.hasAttribute('data-nb-laserart')) { W.laserArt = b.getAttribute('data-nb-laserart'); werkzeugSpeichern(); zeile2Zeichnen(); return; }
     if (b.hasAttribute('data-nb-textgroesse')) {
       const stufen = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64];
       let g = W.textGroesse;
@@ -2172,10 +2878,10 @@
   function popoverSchliessen() {
     if (E && E.popover) { E.popover.remove(); E.popover = null; }
   }
-  function popoverZeigen(anker, html, binden) {
+  function popoverZeigen(anker, html, binden, klasse) {
     popoverSchliessen();
     const p = document.createElement('div');
-    p.className = 'nb-popover';
+    p.className = 'nb-popover' + (klasse ? ' ' + klasse : '');
     p.innerHTML = html;
     E.el.root.appendChild(p);
     const a = anker.getBoundingClientRect(), wr = E.el.root.getBoundingClientRect();
@@ -2189,41 +2895,185 @@
     if (binden) binden(p);
     return p;
   }
-  function farbPopover(anker, art, index) {
-    const liste = art === 'marker' ? MARKER_FARBEN : FARBEN;
-    const aktuell = art === 'marker' ? W.markerFarben[index] : W.stiftFarben[index];
-    popoverZeigen(anker, '<div class="nb-pop-titel">Farbe wählen</div><div class="nb-farbgitter">' +
-      liste.map(function (f) { return '<button style="--f:' + f + '" data-f="' + f + '" class="' + (f.toLowerCase() === String(aktuell).toLowerCase() ? 'aktiv' : '') + '" aria-label="' + f + '"></button>'; }).join('') +
-      '</div><label class="nb-eigene">Eigene Farbe <input type="color" value="' + aktuell + '"></label>',
-      function (p) {
-        const setzen = function (f) {
-          if (art === 'marker') { W.markerFarben[index] = f; W.markerFarbe = index; }
-          else { W.stiftFarben[index] = f; W.stiftFarbe = index; }
-          werkzeugSpeichern(); werkzeugFarbstriche(); zeile2Zeichnen();
-        };
-        $$(p, '[data-f]').forEach(function (b) { b.addEventListener('click', function () { setzen(b.getAttribute('data-f')); popoverSchliessen(); }); });
-        p.querySelector('input').addEventListener('input', function (e) { setzen(e.target.value); });
+  function umschalterHTML(name, an, text, hinweis) {
+    return '<label class="nb-umschalter"><span>' + text + (hinweis ? '<small>' + hinweis + '</small>' : '') + '</span><input type="checkbox" data-u="' + name + '"' + (an ? ' checked' : '') + '><i></i></label>';
+  }
+  function reglerHTML(name, titel, wert) {
+    return '<div class="nb-regler-feld"><div class="nb-regler-kopf"><span>' + titel + '</span><b data-rw="' + name + '">' + Math.round(wert * 100) + '%</b></div>' +
+      '<div class="nb-regler-spur"><input class="nb-regler" type="range" min="0" max="100" step="1" value="' + Math.round(wert * 100) + '" data-r="' + name + '" style="--v:' + Math.round(wert * 100) + '%">' +
+      '<span class="nb-ticks"><i></i><i></i><i></i><i></i><i></i></span></div></div>';
+  }
+  function vorschauZeichnen(c, wz, opt) {
+    const ctx = c.getContext('2d'), dpr = Math.min(2, window.devicePixelRatio || 1);
+    const B = c.clientWidth || 260, H = c.clientHeight || 70;
+    c.width = Math.round(B * dpr); c.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, B, H);
+    const pts = [];
+    for (let i = 0; i <= 60; i++) {
+      const t = i / 60;
+      pts.push(24 + t * (B - 48), H / 2 + Math.sin(t * Math.PI * 2 + 0.3) * H * 0.26, 0.2 + 0.75 * Math.sin(t * Math.PI));
+    }
+    const st = { id: 'vorschau', w: wz, f: opt && opt.farbe || aktuelleFarbe(wz), b: (opt && opt.b || aktuelleBreite(wz)) * 2, p: neuAbtasten(pts, 1.5) };
+    const e = einst(wz);
+    if (wz === 'fueller') { st.sp = e.sp; st.dr = e.dr; }
+    if (wz === 'pinsel') st.dr = e.dr;
+    if (wz === 'bleistift') st.a = 0.85;
+    if (wz === 'marker' || wz === 'tape') { ctx.globalAlpha = wz === 'marker' ? 0.8 : 1; }
+    strichMalen(ctx, st, {});
+    ctx.globalAlpha = 1;
+  }
+  function stiftPopover(anker, wz) {
+    const e = einst(wz);
+    let ansicht = 'haupt';
+    const zeichnen = function (p) {
+      if (ansicht === 'gesten') {
+        p.innerHTML = '<div class="nb-pop-titel"><button class="nb-zurueckpfeil" data-zur="1">' + icon('zurueck') + '</button>Stiftgesten</div>' +
+          umschalterHTML('kritzeln', W.kritzeln, 'Kritzeln zum Löschen') +
+          umschalterHTML('kritzelAlles', W.kritzelAlles, 'Formen und Textmarker löschen', 'Handschrift und Zeichnungen durch Überkritzeln löschen') +
+          umschalterHTML('umkreisen', W.umkreisen, 'Umkreisen für Lasso', 'Zeichne um etwas herum, um es auszuwählen und zu verschieben');
+        return;
+      }
+      let h = '<div class="nb-pop-titel">' + NAMEN[wz] + '</div><canvas class="nb-vorschau"></canvas>';
+      if (STIFTARTEN.indexOf(wz) >= 0) {
+        h += '<div class="nb-stiftarten">' + STIFTARTEN.map(function (a) {
+          return '<button class="' + (a === wz ? 'aktiv' : '') + '" data-art="' + a + '">' + icon(a) + '<span>' + NAMEN[a] + '</span></button>';
+        }).join('') + '</div>';
+      }
+      if (wz === 'fueller') h += reglerHTML('sp', 'Schärfe der Spitze', e.sp) + reglerHTML('dr', 'Druckempfindlichkeit', e.dr);
+      if (wz === 'pinsel') h += reglerHTML('dr', 'Druckempfindlichkeit', e.dr);
+      if (wz !== 'tape') h += reglerHTML('st', 'Strich-Stabilisierung', e.st || 0);
+      h += '<div class="nb-pop-unter">Einstellungen</div>';
+      if (wz === 'marker') h += umschalterHTML('markerGerade', W.markerGerade, 'Gerade Linie zeichnen');
+      if (wz === 'tape') {
+        h += umschalterHTML('tapeGerade', W.tapeGerade, 'Gerades Tape', 'Tippe auf ein Tape, um darunter zu schauen') +
+          '<button class="nb-menue nb-rot" data-tapeweg="1">Alle von der Seite entfernen</button>';
+      } else {
+        if (wz !== 'formstift') h += umschalterHTML('formen', W.formen, 'Zeichnen und Halten', 'Wandle deine Zeichnung in eine perfekte Form um, indem du den Stift am Ende kurz still hältst');
+        h += '<button class="nb-menue nb-pfeilmenue" data-gesten="1">Stiftgesten' + icon('chevronrechts') + '</button>';
+      }
+      p.innerHTML = h;
+      const c = p.querySelector('canvas');
+      if (c) requestAnimationFrame(function () { vorschauZeichnen(c, wz); });
+    };
+    popoverZeigen(anker, '', function (p) {
+      zeichnen(p);
+      p.addEventListener('click', function (ev) {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.hasAttribute('data-art')) { popoverSchliessen(); werkzeugWaehlen(b.getAttribute('data-art')); stiftPopover(E.el.zeile2.querySelector('[data-nb-uwz]'), W.wz); return; }
+        if (b.hasAttribute('data-gesten')) { ansicht = 'gesten'; zeichnen(p); return; }
+        if (b.hasAttribute('data-zur')) { ansicht = 'haupt'; zeichnen(p); return; }
+        if (b.hasAttribute('data-tapeweg')) { popoverSchliessen(); tapeAlleEntfernen(); }
       });
+      p.addEventListener('input', function (ev) {
+        const r = ev.target.getAttribute('data-r');
+        if (!r) return;
+        const v = Number(ev.target.value) / 100;
+        W.einst[wz] = W.einst[wz] || {};
+        W.einst[wz][r] = v;
+        ev.target.style.setProperty('--v', Math.round(v * 100) + '%');
+        const anz = p.querySelector('[data-rw="' + r + '"]'); if (anz) anz.textContent = Math.round(v * 100) + '%';
+        werkzeugSpeichern();
+        const c = p.querySelector('canvas'); if (c) vorschauZeichnen(c, wz);
+      });
+      p.addEventListener('change', function (ev) {
+        const u = ev.target.getAttribute('data-u');
+        if (!u) return;
+        W[u] = ev.target.checked;
+        werkzeugSpeichern();
+      });
+    }, 'nb-pop-stift');
+  }
+  /* Farbwähler: Palette + eigene Farbe (Farbfeld, Farbton, Hex) */
+  function hsvZuHex(h, s, v) {
+    const f = function (n) { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return '#' + [f(5), f(3), f(1)].map(function (x) { return Math.round(x * 255).toString(16).padStart(2, '0'); }).join('').toUpperCase();
+  }
+  function hexZuHsv(hex) {
+    const c = hexRgb(hex).map(function (x) { return x / 255; }), mx = Math.max.apply(null, c), mn = Math.min.apply(null, c), d = mx - mn;
+    let h = 0;
+    if (d) { if (mx === c[0]) h = ((c[1] - c[2]) / d) % 6; else if (mx === c[1]) h = (c[2] - c[0]) / d + 2; else h = (c[0] - c[1]) / d + 4; }
+    return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx };
+  }
+  function farbPopover(anker, g, index) {
+    const aktuell = W.farben[g][index];
+    let ansicht = 'palette';
+    const setzen = function (f, merken) {
+      W.farben[g][index] = f; W.farbe[g] = index;
+      if (merken) { W.eigeneFarben = [f].concat((W.eigeneFarben || []).filter(function (x) { return x !== f; })).slice(0, 5); }
+      werkzeugSpeichern(); werkzeugFarbstriche(); zeile2Zeichnen();
+    };
+    const titel = { stift: 'Stiftfarbe', bleistift: 'Bleistiftfarbe', marker: 'Textmarker-Farbe', tape: 'Tape-Farbe', formen: 'Linienfarbe', zettel: 'Zettelfarbe', laser: 'Laserfarbe' }[g] || 'Farbe';
+    const zeichnen = function (p) {
+      if (ansicht === 'palette') {
+        const eigene = (W.eigeneFarben || []).filter(function (f) { return paletteFuer(g).indexOf(f) < 0; });
+        p.innerHTML = '<div class="nb-pop-titel">' + titel + '</div><div class="nb-farbgitter">' +
+          paletteFuer(g).map(function (f) { return '<button style="--f:' + f + '" data-f="' + f + '" class="' + (f.toLowerCase() === String(W.farben[g][index]).toLowerCase() ? 'aktiv' : '') + '" aria-label="' + f + '"></button>'; }).join('') +
+          '</div>' + (eigene.length ? '<div class="nb-pop-unter">Zuletzt</div><div class="nb-farbgitter">' + eigene.map(function (f) { return '<button style="--f:' + f + '" data-f="' + f + '"></button>'; }).join('') + '</div>' : '') +
+          '<button class="nb-menue nb-pfeilmenue" data-eigene="1"><span class="nb-regenbogen"></span>Eigene Farbe' + icon('chevronrechts') + '</button>';
+        return;
+      }
+      const hsv = hexZuHsv(W.farben[g][index]);
+      p.innerHTML = '<div class="nb-pop-titel"><button class="nb-zurueckpfeil" data-zur="1">' + icon('zurueck') + '</button>' + titel + '</div>' +
+        '<div class="nb-sv" style="--h:' + hsv.h + '"><span class="nb-sv-punkt"></span></div>' +
+        '<input class="nb-farbton" type="range" min="0" max="359" value="' + Math.round(hsv.h) + '">' +
+        '<div class="nb-hexzeile"><span class="nb-hexvorschau"></span><input class="nb-hex" type="text" maxlength="7" spellcheck="false" value="' + W.farben[g][index] + '"></div>';
+      const feld = p.querySelector('.nb-sv'), punkt = p.querySelector('.nb-sv-punkt'), ton = p.querySelector('.nb-farbton'), hex = p.querySelector('.nb-hex'), vor = p.querySelector('.nb-hexvorschau');
+      let H = hsv.h, S = hsv.s, V = hsv.v;
+      const zeigen = function (vonHex) {
+        const f = hsvZuHex(H, S, V);
+        feld.style.setProperty('--h', H);
+        punkt.style.left = (S * 100) + '%'; punkt.style.top = ((1 - V) * 100) + '%';
+        vor.style.background = f;
+        if (!vonHex) hex.value = f;
+        setzen(f, false);
+      };
+      const ziehen = function (ev) {
+        const r = feld.getBoundingClientRect();
+        S = grenze((ev.clientX - r.left) / r.width, 0, 1); V = grenze(1 - (ev.clientY - r.top) / r.height, 0, 1);
+        zeigen(false);
+      };
+      feld.addEventListener('pointerdown', function (ev) { try { feld.setPointerCapture(ev.pointerId); } catch (x) { } ziehen(ev); feld._ziehen = true; });
+      feld.addEventListener('pointermove', function (ev) { if (feld._ziehen) ziehen(ev); });
+      feld.addEventListener('pointerup', function () { feld._ziehen = false; setzen(hsvZuHex(H, S, V), true); });
+      ton.addEventListener('input', function () { H = Number(ton.value); zeigen(false); });
+      ton.addEventListener('change', function () { setzen(hsvZuHex(H, S, V), true); });
+      hex.addEventListener('keydown', function (ev) { ev.stopPropagation(); });
+      hex.addEventListener('input', function () {
+        let v = hex.value.trim(); if (v[0] !== '#') v = '#' + v;
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) { const q = hexZuHsv(v); H = q.h; S = q.s; V = q.v; ton.value = Math.round(H); zeigen(true); setzen(v.toUpperCase(), true); }
+      });
+      zeigen(true);
+    };
+    popoverZeigen(anker, '', function (p) {
+      zeichnen(p);
+      p.addEventListener('click', function (ev) {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.hasAttribute('data-f')) { setzen(b.getAttribute('data-f'), false); popoverSchliessen(); return; }
+        if (b.hasAttribute('data-eigene')) { ansicht = 'eigen'; zeichnen(p); return; }
+        if (b.hasAttribute('data-zur')) { ansicht = 'palette'; zeichnen(p); }
+      });
+    }, 'nb-pop-farbe');
+    return aktuell;
   }
   function breitePopover(anker, wz, index) {
-    const bereich = wz === 'marker' ? [4, 32, 0.5] : (wz === 'radierer' ? [4, 40, 1] : [0.3, 8, 0.1]);
+    const bereich = wz === 'marker' || wz === 'tape' ? [4, 40, 0.5] : (wz === 'radierer' ? [4, 40, 1] : [0.3, 8, 0.1]);
     const wert = W.breiten[wz][index];
     const anzeige = function (v) { return wz === 'radierer' ? Math.round(v) + ' px' : (v * 0.3528).toFixed(2).replace('.', ',') + ' mm'; };
     popoverZeigen(anker, '<div class="nb-pop-titel">Stärke <span class="nb-pop-wert">' + anzeige(wert) + '</span></div>' +
       '<input class="nb-regler" type="range" min="' + bereich[0] + '" max="' + bereich[1] + '" step="' + bereich[2] + '" value="' + wert + '">' +
-      '<canvas class="nb-vorschau" width="440" height="80"></canvas>',
+      '<canvas class="nb-vorschau"></canvas>',
       function (p) {
         const regler = p.querySelector('input'), c = p.querySelector('canvas');
         const vorschau = function () {
-          const v = Number(regler.value), ctx = c.getContext('2d');
-          ctx.clearRect(0, 0, c.width, c.height);
-          const pts = [];
-          for (let i = 0; i <= 40; i++) { const t = i / 40; pts.push(30 + t * 380, 40 + Math.sin(t * Math.PI * 2) * 18, 0.25 + 0.5 * Math.sin(t * Math.PI)); }
-          ctx.save(); ctx.scale(1, 1);
-          if (wz === 'radierer') { ctx.beginPath(); ctx.arc(220, 40, v, 0, Math.PI * 2); ctx.strokeStyle = '#6E6E78'; ctx.lineWidth = 2; ctx.stroke(); }
-          else if (wz === 'marker') { ctx.globalAlpha = 0.85; ctx.strokeStyle = W.markerFarben[W.markerFarbe]; ctx.lineWidth = v * 2; ctx.lineCap = 'round'; ctx.stroke(linienPfad(pts)); }
-          else { ctx.fillStyle = W.stiftFarben[W.stiftFarbe]; ctx.fill(tintenPfad(pts, wz, v * 2)); }
-          ctx.restore();
+          const v = Number(regler.value);
+          if (wz === 'radierer') {
+            const ctx = c.getContext('2d'); c.width = c.clientWidth * 2; c.height = c.clientHeight * 2;
+            ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
+            ctx.beginPath(); ctx.arc(c.clientWidth / 2, c.clientHeight / 2, Math.min(v, c.clientHeight / 2 - 2), 0, Math.PI * 2); ctx.strokeStyle = '#6E6E78'; ctx.lineWidth = 2; ctx.stroke();
+          } else vorschauZeichnen(c, wz === 'formen' ? 'kuli' : wz, { b: v, farbe: aktuelleFarbe(wz) });
         };
         regler.addEventListener('input', function () {
           W.breiten[wz][index] = Number(regler.value);
@@ -2231,99 +3081,486 @@
           werkzeugSpeichern(); vorschau();
         });
         regler.addEventListener('change', function () { zeile2Zeichnen(); });
-        vorschau();
+        requestAnimationFrame(vorschau);
+      });
+  }
+  function radiererMenue(anker) {
+    popoverZeigen(anker, '<div class="nb-pop-titel">Radierer</div><div class="nb-stiftarten">' +
+      [['standard', 'Standardradierer', 'Löscht genau dort, wo du radierst'], ['strich', 'Strichradierer', 'Löscht ganze Striche auf einmal']].map(function (m) {
+        return '<button class="' + (W.radierModus === m[0] ? 'aktiv' : '') + '" data-m="' + m[0] + '">' + icon(m[0] === 'standard' ? 'radierer' : 'strichradierer') + '<span>' + m[1] + '</span></button>';
+      }).join('') + '</div><div class="nb-pop-hinweis">' + (W.radierModus === 'strich' ? 'Löscht ganze Striche auf einmal.' : 'Effizientes Löschen ohne Spuren zu hinterlassen.') + '</div>',
+      function (p) {
+        p.addEventListener('click', function (e) {
+          const b = e.target.closest('[data-m]'); if (!b) return;
+          W.radierModus = b.getAttribute('data-m'); werkzeugSpeichern(); popoverSchliessen(); zeile2Zeichnen();
+        });
+      });
+  }
+  function radiererFilterPopover(anker) {
+    const f = W.radierFilter;
+    popoverZeigen(anker, '<div class="nb-pop-titel">Erweiterte Einstellungen</div><div class="nb-pop-unter">Radiererfilter</div>' +
+      [['stift', 'Stift', 'fueller'], ['bleistift', 'Bleistift', 'bleistift'], ['marker', 'Textmarker', 'marker'], ['tape', 'Tape', 'tape']].map(function (x) {
+        return '<label class="nb-umschalter nb-mit-icon">' + icon(x[2]) + '<span>' + x[1] + '</span><input type="checkbox" data-filter="' + x[0] + '"' + (f[x[0]] !== false ? ' checked' : '') + '><i></i></label>';
+      }).join('') + '<div class="nb-pop-hinweis">Der Radierer ignoriert alles, was hier ausgeschaltet ist.</div><div class="nb-pop-linie"></div>' +
+      umschalterHTML('radierAuto', W.radierAuto, 'Automatisch abwählen', 'Nach dem Radieren zurück zum vorigen Werkzeug') +
+      '<button class="nb-menue nb-rot" data-leeren="1">Seite leeren</button>',
+      function (p) {
+        p.addEventListener('change', function (e) {
+          const k = e.target.getAttribute('data-filter');
+          if (k) W.radierFilter[k] = e.target.checked;
+          const u = e.target.getAttribute('data-u');
+          if (u) W[u] = e.target.checked;
+          werkzeugSpeichern();
+        });
+        p.addEventListener('click', function (e) {
+          if (e.target.closest('[data-leeren]') && confirm('Alles auf dieser Seite löschen?')) { popoverSchliessen(); seiteLeeren(aktuelleSeite()); }
+        });
+      });
+  }
+  function lassoFilterPopover(anker) {
+    const f = W.lassoFilter;
+    popoverZeigen(anker, '<div class="nb-pop-titel">Lasso-Auswahl</div><div class="nb-pop-unter">In Auswahl inbegriffen</div>' +
+      [['schrift', 'Handschrift'], ['bilder', 'Bilder'], ['formen', 'Formen'], ['pfeile', 'Pfeile'], ['text', 'Textfelder'], ['tape', 'Tape'], ['zettel', 'Notizzettel']].map(function (x) {
+        return '<label class="nb-umschalter"><span>' + x[1] + '</span><input type="checkbox" data-filter="' + x[0] + '"' + (f[x[0]] !== false ? ' checked' : '') + '><i></i></label>';
+      }).join(''),
+      function (p) {
+        p.addEventListener('change', function (e) { const k = e.target.getAttribute('data-filter'); if (k) { W.lassoFilter[k] = e.target.checked; werkzeugSpeichern(); } });
+      });
+  }
+  function fuellungPopover(anker) {
+    popoverZeigen(anker, '<div class="nb-pop-titel">Füllung</div>' + umschalterHTML('formFuellen', W.formFuellen, 'Mit Farbe füllen') +
+      reglerHTML('deck', 'Deckkraft', W.formDeckkraft),
+      function (p) {
+        p.addEventListener('change', function (e) { if (e.target.getAttribute('data-u')) { W.formFuellen = e.target.checked; werkzeugSpeichern(); zeile2Zeichnen(); } });
+        p.addEventListener('input', function (e) {
+          if (e.target.getAttribute('data-r') !== 'deck') return;
+          W.formDeckkraft = Number(e.target.value) / 100; e.target.style.setProperty('--v', e.target.value + '%');
+          p.querySelector('[data-rw=deck]').textContent = e.target.value + '%'; werkzeugSpeichern();
+        });
       });
   }
   function menuePopover(anker) {
     const i = aktuelleSeite(), s = E.seiten[i];
+    const ablage = ablageLesen();
+    const m = function (id, text, ic, extra) {
+      return '<button class="nb-menue nb-mit-icon" data-m="' + id + '">' + icon(ic) + '<span>' + text + '</span>' + (extra || '') + '</button>';
+    };
     popoverZeigen(anker, '<div class="nb-pop-titel">Seite ' + (i + 1) + ' von ' + E.seiten.length + '</div>' +
-      '<button class="nb-menue" data-m="neu">Neue Seite danach</button>' +
-      '<button class="nb-menue" data-m="kopie">Seite duplizieren</button>' +
-      (s.hg ? '' : '<div class="nb-pop-unter">Vorlage dieser Seite</div><div class="nb-vorlagen-mini">' +
-        VORLAGEN.map(function (v) { return '<button data-v="' + v[0] + '" class="' + (s.v === v[0] ? 'aktiv' : '') + '"><span class="nb-vl nb-vl-' + v[0] + '"></span>' + v[1] + '</button>'; }).join('') + '</div>') +
-      '<button class="nb-menue" data-m="uebersicht">Alle Seiten anzeigen · sortieren</button>' +
-      '<button class="nb-menue" data-m="inhalt">Inhaltsverzeichnis</button>' +
-      '<button class="nb-menue" data-m="bild">Bild einfügen …</button>' +
-      '<button class="nb-menue" data-m="pdf-rein">PDF-Seiten einfügen …</button>' +
-      '<button class="nb-menue" data-m="pdf-raus">Als PDF exportieren</button>' +
+      m('lz', s.lz ? 'Lesezeichen bearbeiten' : 'Lesezeichen hinzufügen', 'lesezeichen') +
+      m('neu', 'Neue Seite danach', 'plus') +
+      m('kopie', 'Seite duplizieren', 'kopieren') +
+      m('ablage', 'Seite kopieren', 'kopieren', '<small>für ein anderes Notizbuch</small>') +
+      (ablage ? m('einfuegen', 'Kopierte Seite einfügen', 'plus') : '') +
+      m('drehen', 'Seite drehen', 'drehen') +
+      m('vorlage', 'Vorlage wechseln', 'seiten') +
+      m('gehe', 'Gehe zu Seite', 'chevronrechts', '<small>' + (i + 1) + ' von ' + E.seiten.length + '</small>') +
+      m('uebersicht', 'Alle Seiten · sortieren', 'seiten') +
+      m('inhalt', 'Inhaltsverzeichnis', 'lesezeichen') +
+      '<div class="nb-pop-unter">Einfügen und Teilen</div>' +
+      m('bild', 'Bild einfügen …', 'bild') +
+      m('pdf-rein', 'PDF-Seiten einfügen …', 'seiten') +
+      m('pdf-raus', 'Als PDF exportieren', 'teilen') +
       '<div class="nb-pop-unter">Mit KI lernen</div>' +
       '<button class="nb-menue nb-ki-menue" data-m="ki-zus">' + icon('funke') + 'Zusammenfassen</button>' +
       '<button class="nb-menue nb-ki-menue" data-m="ki-karten">' + icon('funke') + 'Karteikarten erstellen</button>' +
       '<button class="nb-menue nb-ki-menue" data-m="ki-quiz">' + icon('funke') + 'Quiz erstellen</button>' +
       ((E.buch.lernen || []).length ? '<button class="nb-menue" data-m="lernen">Gespeicherte Lernsets (' + E.buch.lernen.length + ')</button>' : '') +
-      '<div class="nb-pop-linie"></div>' +
-      '<button class="nb-menue nb-rot" data-m="weg">Diese Seite löschen</button>' +
-      '<div class="nb-pop-linie"></div>' +
-      '<label class="nb-umschalter"><span>Mit Finger schreiben</span><input type="checkbox" data-m="finger"' + (W.finger ? ' checked' : '') + '><i></i></label>' +
-      '<label class="nb-umschalter"><span>Durchkritzeln löscht</span><input type="checkbox" data-m="kritzeln"' + (W.kritzeln ? ' checked' : '') + '><i></i></label>' +
-      '<label class="nb-umschalter"><span>Formen erkennen (Stift halten)</span><input type="checkbox" data-m="formen"' + (W.formen ? ' checked' : '') + '><i></i></label>',
+      '<div class="nb-pop-unter">Seite leeren oder löschen</div>' +
+      m('objekte', 'Bestimmte Objekte löschen', 'filter') +
+      '<button class="nb-menue nb-mit-icon nb-rot" data-m="leeren">' + icon('radierer') + '<span>Seite leeren</span></button>' +
+      '<button class="nb-menue nb-mit-icon nb-rot" data-m="weg">' + icon('loeschen') + '<span>Seite löschen</span></button>' +
+      '<div class="nb-pop-unter">Einstellungen</div>' +
+      umschalterHTML('ausrichten', W.ausrichten !== false, 'Objekte ausrichten', 'Hilfslinien beim Verschieben') +
+      umschalterHTML('horizontal', !!W.horizontal, 'Seitenweise blättern (horizontal)') +
+      umschalterHTML('finger', W.finger, 'Mit Finger schreiben') +
+      m('leiste', 'Werkzeugleiste anpassen', 'filter'),
       function (p) {
         p.addEventListener('click', function (e) {
           const b = e.target.closest('button');
           if (!b) return;
-          if (b.hasAttribute('data-v')) { vorlageSetzen(i, b.getAttribute('data-v')); popoverSchliessen(); return; }
-          const m = b.getAttribute('data-m');
+          const a = b.getAttribute('data-m');
+          if (!a) return;
           popoverSchliessen();
-          if (m === 'neu') seiteHinzufuegen(i);
-          else if (m === 'kopie') seiteDuplizieren(i);
-          else if (m === 'inhalt') lesezeichenPopover(E.el.lesezeichen);
-          else if (m === 'uebersicht') uebersichtZeigen();
-          else if (m === 'bild') E.el.bildDatei.click();
-          else if (m === 'pdf-rein') E.el.pdfDatei.click();
-          else if (m === 'pdf-raus') pdfExportieren(E.buch, E.seiten);
-          else if (m === 'ki-zus') zusammenfassen();
-          else if (m === 'ki-karten') lernenErstellen('karten');
-          else if (m === 'ki-quiz') lernenErstellen('quiz');
-          else if (m === 'lernen') lernenListe(E.buch, true);
-          else if (m === 'weg') { if (confirm('Seite ' + (i + 1) + ' wirklich löschen?')) seiteLoeschen(i); }
+          if (a === 'neu') seiteHinzufuegen(i);
+          else if (a === 'lz') lesezeichenPopover(E.el.lesezeichen);
+          else if (a === 'kopie') seiteDuplizieren(i);
+          else if (a === 'ablage') seiteInAblage(i);
+          else if (a === 'einfuegen') ablageEinfuegen(i);
+          else if (a === 'drehen') seiteDrehen(i);
+          else if (a === 'vorlage') vorlageGalerie({ titel: 'Vorlage wechseln', v: s.v, papier: s.papier, quer: s.b > s.h, format: E.buch.format, seite: true,
+            fertig: function (w) { vorlageFuerSeiten(w.alle ? E.seiten.map(function (x, k) { return k; }) : [i], w); } });
+          else if (a === 'gehe') {
+            const n = Number(prompt('Zu welcher Seite? (1–' + E.seiten.length + ')', String(i + 1)));
+            if (n >= 1 && n <= E.seiten.length) zuSeite(n - 1);
+          }
+          else if (a === 'inhalt') lesezeichenPopover(E.el.lesezeichen);
+          else if (a === 'uebersicht') uebersichtZeigen();
+          else if (a === 'bild') E.el.bildDatei.click();
+          else if (a === 'pdf-rein') E.el.pdfDatei.click();
+          else if (a === 'pdf-raus') pdfExportieren(E.buch, E.seiten);
+          else if (a === 'ki-zus') zusammenfassen();
+          else if (a === 'ki-karten') lernenErstellen('karten');
+          else if (a === 'ki-quiz') lernenErstellen('quiz');
+          else if (a === 'lernen') lernenListe(E.buch, true);
+          else if (a === 'objekte') objekteLoeschenPopover(E.el.root.querySelector('[data-nb-aktion=mehr]'), i);
+          else if (a === 'leeren') { if (confirm('Alles auf Seite ' + (i + 1) + ' löschen?')) seiteLeeren(i); }
+          else if (a === 'weg') { if (confirm('Seite ' + (i + 1) + ' wirklich löschen?')) seiteLoeschen(i); }
+          else if (a === 'leiste') leisteAnpassen(E.el.root.querySelector('[data-nb-aktion=mehr]'));
         });
-        $$(p, 'input[type=checkbox]').forEach(function (c) {
-          c.addEventListener('change', function () {
-            if (c.getAttribute('data-m') === 'finger') { W.finger = c.checked; toast(c.checked ? 'Finger schreibt – zwei Finger blättern und zoomen' : 'Nur Apple Pencil schreibt – Finger blättert'); }
-            else if (c.getAttribute('data-m') === 'formen') W.formen = c.checked;
-            else W.kritzeln = c.checked;
-            werkzeugSpeichern();
-          });
+        p.addEventListener('change', function (e) {
+          const u = e.target.getAttribute('data-u');
+          if (!u) return;
+          W[u] = e.target.checked; werkzeugSpeichern();
+          if (u === 'finger') toast(e.target.checked ? 'Finger schreibt – zwei Finger blättern und zoomen' : 'Nur Apple Pencil schreibt – Finger blättert');
+          if (u === 'horizontal') { const k = aktuelleSeite(); layout(); groesseAnpassen(); zuSeite(k); }
         });
       });
   }
-
-  /* ---------- Seitenübersicht (mit Sortieren per Ziehen) ---------- */
-  function uebersichtZeigen() {
-    textBeenden();
-    if (E.uebersicht) E.uebersicht.remove();
-    const ov = document.createElement('div');
-    ov.className = 'nb-uebersicht';
-    ov.innerHTML = '<div class="nb-ueb-kopf"><b>Seiten</b><span class="nb-ueb-zahl">' + E.seiten.length + '</span>' +
-      '<button class="btn btn-klein" data-u="neu">+ Seite</button><button class="nb-knopf" data-u="zu" aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
-      '<div class="nb-ueb-tipp">Zum Sortieren eine Seite gedrückt halten und ziehen.</div>' +
-      '<div class="nb-ueb-gitter">' + E.seiten.map(function (s, i) {
-        return '<div class="nb-ueb-seite" data-id="' + s.id + '"><div class="nb-ueb-bild" style="aspect-ratio:' + s.b + '/' + s.h + '"><canvas></canvas>' +
-          (s.lz ? '<span class="nb-ueb-band" title="' + esc(lesezeichenTitel(s, i)) + '"></span>' : '') + '</div>' +
-          '<div class="nb-ueb-fuss"><span class="nb-ueb-nr">' + (i + 1) + (s.lz && s.lz.t ? ' · ' + esc(s.lz.t) : '') + '</span>' +
-          '<button data-kopie="1" aria-label="Seite duplizieren" title="Duplizieren">' + icon('kopieren') + '</button>' +
-          '<button data-weg="1" aria-label="Seite löschen" title="Löschen">' + icon('loeschen') + '</button></div></div>';
-      }).join('') + '</div>';
-    E.el.root.appendChild(ov);
-    E.uebersicht = ov;
-    const gitter = ov.querySelector('.nb-ueb-gitter');
-    function indexVon(kachel) { return E.seiten.findIndex(function (x) { return x.id === kachel.getAttribute('data-id'); }); }
-    function schliessen() { ov.remove(); if (E) E.uebersicht = null; }
-    let unterdruecken = false;
-    ov.addEventListener('click', function (e) {
-      if (unterdruecken && e.target.closest('.nb-ueb-gitter')) { unterdruecken = false; e.stopPropagation(); return; }
-      const kachel = e.target.closest('.nb-ueb-seite');
-      if (e.target.closest('[data-weg]') && kachel) {
-        const i = indexVon(kachel);
-        if (i >= 0 && confirm('Seite ' + (i + 1) + ' wirklich löschen?')) { schliessen(); seiteLoeschen(i); }
-        return;
-      }
-      if (e.target.closest('[data-kopie]') && kachel) { const i = indexVon(kachel); schliessen(); seiteDuplizieren(i); return; }
-      const u = e.target.closest('[data-u]');
-      if (u) { const a = u.getAttribute('data-u'); schliessen(); if (a === 'neu') seiteHinzufuegen(E.seiten.length - 1); return; }
-      if (kachel) { const i = indexVon(kachel); schliessen(); if (i >= 0) zuSeite(i); }
+  function leisteAnpassen(anker) {
+    popoverZeigen(anker, '<div class="nb-pop-titel">Werkzeugleiste anpassen</div>' +
+      HAUPT.map(function (h) {
+        return '<label class="nb-umschalter nb-mit-icon">' + icon(h === 'stift' ? 'fueller' : h) + '<span>' + NAMEN[h] + '</span><input type="checkbox" data-h="' + h + '"' + (W.leiste[h] !== false ? ' checked' : '') + '><i></i></label>';
+      }).join(''),
+      function (p) {
+        p.addEventListener('change', function (e) {
+          const h = e.target.getAttribute('data-h'); if (!h) return;
+          W.leiste[h] = e.target.checked; werkzeugSpeichern();
+          const k = E.el.root.querySelector('[data-nb-haupt=' + h + ']'); if (k) k.hidden = !e.target.checked;
+        });
+      });
+  }
+  /* ---------- Bestimmte Objekte löschen ---------- */
+  function objekteLoeschenPopover(anker, i) {
+    const arten = [['schrift', 'Handschrift'], ['marker', 'Textmarker'], ['formen', 'Formen und Pfeile'], ['tape', 'Tape'], ['text', 'Textfelder'], ['zettel', 'Notizzettel'], ['bilder', 'Bilder']];
+    popoverZeigen(anker, '<div class="nb-pop-titel">Bestimmte Objekte löschen</div>' +
+      arten.map(function (a) { return '<label class="nb-umschalter"><span>' + a[1] + '</span><input type="checkbox" data-a="' + a[0] + '"><i></i></label>'; }).join('') +
+      '<div class="nb-lz-knoepfe"><button class="btn btn-klein btn-danger" data-los="1">Löschen</button></div>',
+      function (p) {
+        p.addEventListener('click', function (e) {
+          if (!e.target.closest('[data-los]')) return;
+          const wahl = {}; $$(p, 'input:checked').forEach(function (c) { wahl[c.getAttribute('data-a')] = true; });
+          popoverSchliessen();
+          const seite = E.seiten[i];
+          const art = function (st) { return st.w === 'marker' ? 'marker' : st.w === 'tape' ? 'tape' : st.w === 'form' ? 'formen' : 'schrift'; };
+          const ok = aendern(seite, function () {
+            if (wahl.schrift || wahl.marker || wahl.formen || wahl.tape) seite.striche = seite.striche.filter(function (st) { return !wahl[art(st)]; });
+            if (wahl.text || wahl.zettel) seite.texte = seite.texte.filter(function (t) { return !wahl[t.bg ? 'zettel' : 'text']; });
+            if (wahl.bilder) seite.bilder = [];
+          });
+          planeAlles();
+          if (ok) toast('Gelöscht', true); else toast('Nichts zum Löschen gefunden.');
+        });
+      });
+  }
+  /* ---------- Seite drehen ---------- */
+  function seiteDrehen(i) {
+    textBeenden(); auswahlAufheben(true);
+    const s = E.seiten[i], B = s.b, H = s.h;
+    const vorher = { b: s.b, h: s.h, striche: s.striche, texte: s.texte, bilder: s.bilder, hgRot: s.hgRot || 0 };
+    const dreh = function (x, y) { return [r2(H - y), r2(x)]; };                // 90° im Uhrzeigersinn
+    const striche = s.striche.map(function (st) {
+      const q = st.p.slice();
+      for (let k = 0; k < q.length; k += 3) { const n = dreh(q[k], q[k + 1]); q[k] = n[0]; q[k + 1] = n[1]; }
+      return Object.assign({}, st, { p: q });
     });
+    const texte = s.texte.map(function (t) {
+      const h = textHoehe(t), mx = t.x + t.w / 2, my = t.y + h / 2, n = dreh(mx, my);
+      return Object.assign({}, t, { x: r2(grenze(n[0] - t.w / 2, 0, Math.max(0, H - t.w))), y: r2(grenze(n[1] - h / 2, 0, Math.max(0, B - h))) });
+    });
+    const bilder = s.bilder.map(function (bi) {
+      const mx = bi.x + bi.w / 2, my = bi.y + bi.h / 2, n = dreh(mx, my);
+      return Object.assign({}, bi, { x: r2(n[0] - bi.h / 2), y: r2(n[1] - bi.w / 2), w: bi.h, h: bi.w, r: ((bi.r || 0) + 90) % 360 });
+    });
+    const nachher = { b: H, h: B, striche: striche, texte: texte, bilder: bilder, hgRot: ((s.hgRot || 0) + 90) % 360 };
+    Object.assign(s, nachher);
+    aktionMerken({ typ: 'seite-meta', id: s.id, vorher: vorher, nachher: nachher });
+    schmutzig(s); layout(); kameraBegrenzen(); planeAlles();
+    toast('Seite gedreht', true);
+  }
+  function bildMalen(ctx, im, x, y, w, h, rot) {
+    if (!rot) { ctx.drawImage(im, x, y, w, h); return; }
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2); ctx.rotate(rot * Math.PI / 180);
+    const ww = rot % 180 ? h : w, hh = rot % 180 ? w : h;
+    ctx.drawImage(im, -ww / 2, -hh / 2, ww, hh);
+    ctx.restore();
+  }
+  /* ---------- Seite kopieren und in anderes Notizbuch einfügen ---------- */
+  const ABLAGE_KEY = 'schulplaner.notizen.ablage';
+  function ablageLesen() { try { const a = JSON.parse(localStorage.getItem(ABLAGE_KEY) || 'null'); return a && a.seite ? a : null; } catch (e) { return null; } }
+  function seiteInAblage(i) {
+    const s = E.seiten[i];
+    try {
+      localStorage.setItem(ABLAGE_KEY, JSON.stringify({ seite: s, buch: E.buch.id, zeit: jetzt() }));
+      toast('Seite kopiert – in einem anderen Notizbuch über ⋯ „Kopierte Seite einfügen“');
+    } catch (e) { toast('Seite ist zu groß zum Kopieren.'); }
+  }
+  async function ablageEinfuegen(i) {
+    const a = ablageLesen();
+    if (!a) return;
+    const s = JSON.parse(JSON.stringify(a.seite));
+    s.id = uid(); s.buch = E.buch.id; s.erstellt = jetzt(); s.g = jetzt(); delete s.lz; delete s.ocr;
+    s.striche.forEach(function (x) { x.id = uid(); }); s.texte.forEach(function (x) { x.id = uid(); }); s.bilder.forEach(function (x) { x.id = uid(); });
+    // Bilder/PDF-Hintergrund für dieses Notizbuch kopieren
+    const ids = []; if (s.hg) ids.push(s.hg); s.bilder.forEach(function (b) { ids.push(b.d); });
+    const neu = {};
+    for (const id of ids) {
+      if (neu[id]) continue;
+      const d = await holen('dateien', id).catch(function () { return null; });
+      if (d && d.blob) neu[id] = await dateiSpeichern(d.blob, E.buch.id);
+    }
+    if (s.hg) s.hg = neu[s.hg] || null;
+    s.bilder = s.bilder.filter(function (b) { return neu[b.d]; }).map(function (b) { return Object.assign(b, { d: neu[b.d] }); });
+    const index = i + 1;
+    E.seiten.splice(index, 0, s);
+    aktionMerken({ typ: 'seite-neu', index: index, seite: s });
+    schmutzig(s); layout(); kameraBegrenzen(); zuSeite(index);
+    toast('Seite eingefügt');
+  }
+  /* ---------- Vorlage ändern ---------- */
+  function vorlageFuerSeiten(liste, w) {
+    liste.forEach(function (i) {
+      const s = E.seiten[i];
+      if (!s) return;
+      const vorher = { v: s.v, papier: s.papier, b: s.b, h: s.h }, nachher = { v: s.hg ? s.v : w.v, papier: w.papier, b: s.b, h: s.h };
+      if (!s.hg && w.quer !== (s.b > s.h)) { nachher.b = s.h; nachher.h = s.b; }
+      Object.assign(s, nachher);
+      aktionMerken({ typ: 'seite-meta', id: s.id, vorher: vorher, nachher: nachher });
+      schmutzig(s);
+    });
+    E.buch.vorlage = w.v; E.buch.papier = w.papier; E.buch.quer = !!w.quer; E.buch.metaG = jetzt(); E.buchGeaendert = true;
+    layout(); kameraBegrenzen(); planeAlles();
+  }
+  /* Vorlagen-Galerie wie bei GoodNotes */
+  function vorlageGalerie(o) {
+    const z = { v: o.v || 'liniert', papier: o.papier || 'weiss', quer: !!o.quer, alle: false };
+    const ov = document.createElement('dialog');
+    ov.className = 'nb-galerie-dlg';
+    document.body.appendChild(ov);
+    const schliessen = function () { try { ov.close(); } catch (e) { } ov.remove(); };
+    const zeichnen = function () {
+      ov.innerHTML = '<div class="nb-ki-karte"><div class="nb-ki-kopf"><b>' + esc(o.titel || 'Vorlage') + '</b><button class="nb-knopf" data-zu aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
+        '<div class="nb-gal-optionen"><div class="nb-papierwahl">' + PAPIER_NAMEN.map(function (p) {
+          return '<button type="button" data-p="' + p[0] + '" class="' + (z.papier === p[0] ? 'aktiv' : '') + '"><span style="background:' + PAPIER[p[0]] + '"></span>' + p[1] + '</button>';
+        }).join('') + '</div><div class="nb-segment"><button class="' + (!z.quer ? 'aktiv' : '') + '" data-q="0">Hochformat</button><button class="' + (z.quer ? 'aktiv' : '') + '" data-q="1">Querformat</button></div></div>' +
+        '<div class="nb-ki-text nb-gal-liste">' + VORLAGEN_GRUPPEN.map(function (g) {
+          return '<div class="nb-gal-gruppe"><h4>' + g[0] + '</h4><div class="nb-gal-reihe">' + g[1].map(function (v) {
+            return '<button type="button" class="nb-gal-v' + (z.v === v[0] ? ' aktiv' : '') + '" data-v="' + v[0] + '"><canvas data-vc="' + v[0] + '"></canvas><span>' + v[1] + '</span></button>';
+          }).join('') + '</div></div>';
+        }).join('') + '</div>' +
+        '<div class="nb-ki-fuss">' + (o.seite ? '<label class="nb-gal-alle"><input type="checkbox" data-alle' + (z.alle ? ' checked' : '') + '> Für alle Seiten</label>' : '') +
+        '<span style="margin-left:auto"></span><button class="btn" data-zu>Abbrechen</button><button class="btn btn-primary" data-ok>Übernehmen</button></div></div>';
+      $$(ov, 'canvas[data-vc]').forEach(function (c) { vorlageVorschau(c, c.getAttribute('data-vc'), z.papier, z.quer, o.format); });
+    };
+    ov.showModal();
+    zeichnen();
+    ov.addEventListener('click', function (e) {
+      if (e.target === ov || e.target.closest('[data-zu]')) { schliessen(); return; }
+      const v = e.target.closest('[data-v]'); if (v) { z.v = v.getAttribute('data-v'); $$(ov, '.nb-gal-v').forEach(function (x) { x.classList.toggle('aktiv', x === v); }); return; }
+      const p = e.target.closest('[data-p]'); if (p) { z.papier = p.getAttribute('data-p'); const y = ov.querySelector('.nb-gal-liste').scrollTop; zeichnen(); ov.querySelector('.nb-gal-liste').scrollTop = y; return; }
+      const q = e.target.closest('[data-q]'); if (q) { z.quer = q.getAttribute('data-q') === '1'; const y = ov.querySelector('.nb-gal-liste').scrollTop; zeichnen(); ov.querySelector('.nb-gal-liste').scrollTop = y; return; }
+      if (e.target.closest('[data-ok]')) { const a = ov.querySelector('[data-alle]'); z.alle = !!(a && a.checked); schliessen(); o.fertig(z); }
+    });
+    ov.addEventListener('change', function (e) { if (e.target.hasAttribute('data-alle')) z.alle = e.target.checked; });
+    ov.addEventListener('cancel', function (e) { e.preventDefault(); schliessen(); });
+  }
 
+  /* ---------- Nur lesen ---------- */
+  function nurLesenUmschalten() {
+    textBeenden(); auswahlAufheben();
+    E.nurLesen = !E.nurLesen;
+    E.el.root.classList.toggle('nb-nurlesen', E.nurLesen);
+    const b = E.el.root.querySelector('[data-nb-aktion=nurlesen]');
+    if (b) b.classList.toggle('aktiv', E.nurLesen);
+    zeile2Zeichnen(); planeAlles();
+    toast(E.nurLesen ? 'Nur lesen – Schreiben ist gesperrt' : 'Bearbeiten wieder möglich');
+  }
+
+  /* ---------- Audio-Aufnahme ---------- */
+  function dauerText(ms) { const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  function audioUmschalten() {
+    if (E.aufnahme) { E.aufnahme.rec.stop(); return; }
+    const liste = E.buch.aufnahmen || [];
+    if (!liste.length) { aufnahmeStarten(); return; }
+    popoverZeigen(E.el.root.querySelector('[data-nb-haupt=audio]'), '<div class="nb-pop-titel">Aufnahmen</div>' +
+      '<button class="nb-menue nb-aufnahme-start" data-start="1"><span class="nb-rec"></span>Neue Aufnahme starten</button>' +
+      '<div class="nb-pop-linie"></div><div class="nb-aufnahmen">' + aufnahmenHTML() + '</div>',
+      function (p) { aufnahmenBinden(p); });
+  }
+  function aufnahmenHTML() {
+    const liste = (E.buch.aufnahmen || []).slice().reverse();
+    if (!liste.length) return '<div class="nb-lz-leer">Noch keine Aufnahmen. Tippe auf das Mikrofon, um den Unterricht aufzunehmen.</div>';
+    return liste.map(function (a) {
+      const i = E.seiten.findIndex(function (s) { return s.id === a.seite; });
+      return '<div class="nb-aufnahme" data-id="' + a.id + '"><button class="nb-play" data-play="' + a.id + '" aria-label="Abspielen">' + icon('play') + '</button>' +
+        '<div><b>' + esc(a.titel) + '</b><small>' + dauerText(a.dauer) + (i >= 0 ? ' · Seite ' + (i + 1) : '') + '</small></div>' +
+        (i >= 0 ? '<button class="nb-mini" data-zu="' + i + '">Zur Seite</button>' : '') +
+        '<button class="nb-mini" data-weg="' + a.id + '" aria-label="Löschen">' + icon('loeschen') + '</button><audio preload="none"></audio></div>';
+    }).join('');
+  }
+  function aufnahmenBinden(p) {
+    p.addEventListener('click', async function (e) {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.hasAttribute('data-start')) { popoverSchliessen(); aufnahmeStarten(); return; }
+      if (b.hasAttribute('data-zu')) { zuSeite(Number(b.getAttribute('data-zu'))); return; }
+      if (b.hasAttribute('data-weg')) {
+        if (!confirm('Diese Aufnahme löschen?')) return;
+        const id = b.getAttribute('data-weg');
+        E.buch.aufnahmen = (E.buch.aufnahmen || []).filter(function (a) { return a.id !== id; });
+        E.buch.aufnahmenWeg = Object.assign({}, E.buch.aufnahmenWeg || {}); E.buch.aufnahmenWeg[id] = jetzt();
+        E.buchGeaendert = true; buchSchmutzig();
+        b.closest('.nb-aufnahme').remove(); return;
+      }
+      if (b.hasAttribute('data-play')) {
+        const zeile = b.closest('.nb-aufnahme'), au = zeile.querySelector('audio');
+        if (!au.src) {
+          const a = (E.buch.aufnahmen || []).find(function (x) { return x.id === b.getAttribute('data-play'); });
+          const d = a && await holen('dateien', a.d).catch(function () { return null; });
+          if (!d || !d.blob) { toast('Aufnahme nicht gefunden – erst abgleichen?'); return; }
+          au.src = URL.createObjectURL(d.blob);
+          au.addEventListener('ended', function () { b.innerHTML = icon('play'); });
+        }
+        if (au.paused) { $$(p, 'audio').forEach(function (x) { if (x !== au) x.pause(); }); au.play(); b.innerHTML = icon('pause'); }
+        else { au.pause(); b.innerHTML = icon('play'); }
+      }
+    });
+  }
+  async function aufnahmeStarten() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder !== 'function') {
+      alert('Dieser Browser kann leider nicht aufnehmen.'); return;
+    }
+    let strom;
+    try { strom = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { alert('Kein Zugriff auf das Mikrofon. Bitte in den Einstellungen des Geräts erlauben.'); return; }
+    if (!E) { strom.getTracks().forEach(function (t) { t.stop(); }); return; }
+    const typ = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(function (t) { return MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t); }) || '';
+    let rec;
+    try { rec = new MediaRecorder(strom, typ ? { mimeType: typ } : undefined); } catch (e) { rec = new MediaRecorder(strom); }
+    const ed = E, teile = [], start = Date.now(), seite = ed.seiten[aktuelleSeite()];
+    let fertigOk;
+    const fertig = new Promise(function (ok) { fertigOk = ok; });
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) teile.push(e.data); };
+    rec.onstop = async function () {
+      strom.getTracks().forEach(function (t) { t.stop(); });
+      clearInterval(ed.aufnahme && ed.aufnahme.takt);
+      ed.aufnahme = null;
+      const k = ed.el.root.querySelector('[data-nb-haupt=audio]'); if (k) k.classList.remove('nimmt-auf');
+      if (ed.el.aufnahmeAnzeige) { ed.el.aufnahmeAnzeige.remove(); ed.el.aufnahmeAnzeige = null; }
+      try {
+        const blob = new Blob(teile, { type: rec.mimeType || typ || 'audio/webm' });
+        if (blob.size) {
+          const id = await dateiSpeichern(blob, ed.buch.id);
+          const d = new Date(start);
+          const a = { id: uid(), d: id, start: start, dauer: Date.now() - start, seite: seite && seite.id,
+            titel: 'Aufnahme ' + String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '. ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') };
+          ed.buch.aufnahmen = (ed.buch.aufnahmen || []).concat([a]);
+          ed.buchGeaendert = true;
+          if (E === ed) { buchSchmutzig(); toast('Aufnahme gespeichert (' + dauerText(a.dauer) + ')'); } else await buchSpeichern(ed.buch);
+        }
+      } catch (e) { alert('Aufnahme konnte nicht gespeichert werden: ' + e.message); }
+      fertigOk();
+    };
+    rec.start(1000);
+    const anz = document.createElement('button');
+    anz.className = 'nb-aufnahme-anzeige';
+    anz.innerHTML = '<span class="nb-rec"></span><b>0:00</b><span>Stopp</span>';
+    anz.addEventListener('click', function () { rec.stop(); });
+    E.el.flaeche.appendChild(anz);
+    E.el.aufnahmeAnzeige = anz;
+    const k = E.el.root.querySelector('[data-nb-haupt=audio]'); if (k) k.classList.add('nimmt-auf');
+    E.aufnahme = { rec: rec, start: start, fertig: fertig, takt: setInterval(function () { anz.querySelector('b').textContent = dauerText(Date.now() - start); }, 500) };
+    toast('Aufnahme läuft – frag vorher, ob Aufnehmen erlaubt ist.', false, 3500);
+  }
+
+  /* ---------- Seitenleiste (wie bei GoodNotes) ---------- */
+  const LEISTE_B = 236;
+  function seitenleisteUmschalten() {
+    const breit = E.el.root.clientWidth >= 720;
+    if (!breit) { uebersichtZeigen(); return; }
+    if (E.el.seitenleiste) { E.el.seitenleiste.remove(); E.el.seitenleiste = null; E.el.root.classList.remove('mit-leiste'); }
+    else { E.leisteTab = E.leisteTab || 'seiten'; seitenleisteBauen(); E.el.root.classList.add('mit-leiste'); }
+    const b = E.el.root.querySelector('[data-nb-aktion=seitenleiste]'); if (b) b.classList.toggle('aktiv', !!E.el.seitenleiste);
+    groesseAnpassen();
+  }
+  function seitenleisteBauen() {
+    if (!E.el.seitenleiste) {
+      const el = document.createElement('aside');
+      el.className = 'nb-seitenleiste';
+      E.el.root.appendChild(el);
+      E.el.seitenleiste = el;
+      el.addEventListener('click', seitenleisteKlick);
+    }
+    const el = E.el.seitenleiste;
+    el.style.top = E.el.root.querySelector('.nb-leiste').offsetHeight + 'px';
+    const tabs = [['seiten', 'seiten', 'Seiten'], ['gliederung', 'liste', 'Gliederung'], ['lesezeichen', 'lesezeichen', 'Lesezeichen'], ['audio', 'audio', 'Audio']];
+    let inhalt = '';
+    if (E.leisteTab === 'seiten' || E.leisteTab === 'lesezeichen') {
+      const nur = E.leisteTab === 'lesezeichen';
+      const liste = E.seiten.map(function (s, i) { return { s: s, i: i }; }).filter(function (x) { return !nur || x.s.lz; });
+      inhalt = '<div class="nb-sl-gitter' + (nur ? '' : ' nb-sl-sortierbar') + '">' + liste.map(function (x) {
+        return '<div class="nb-ueb-seite nb-sl-seite" data-id="' + x.s.id + '"><div class="nb-ueb-bild" style="aspect-ratio:' + x.s.b + '/' + x.s.h + '"><canvas></canvas>' +
+          (x.s.lz ? '<span class="nb-ueb-band"></span>' : '') + '</div><div class="nb-ueb-fuss"><span class="nb-ueb-nr">' + (x.i + 1) + (x.s.lz && x.s.lz.t ? ' · ' + esc(x.s.lz.t) : '') + '</span>' +
+          (nur ? '' : '<button data-kopie="1" title="Duplizieren">' + icon('kopieren') + '</button><button data-weg="1" title="Löschen">' + icon('loeschen') + '</button>') + '</div></div>';
+      }).join('') + (nur ? (liste.length ? '' : '<div class="nb-lz-leer">Noch keine Lesezeichen.</div>') : '<button class="nb-sl-neu" data-neu="1">' + icon('plus') + 'Seite hinzufügen</button>') + '</div>';
+    } else if (E.leisteTab === 'gliederung') {
+      const liste = [];
+      E.seiten.forEach(function (s, i) { if (s.lz) liste.push({ i: i, t: lesezeichenTitel(s, i) }); });
+      inhalt = '<div class="nb-sl-text">' + (liste.length ? liste.map(function (x) {
+        return '<button class="nb-menue nb-lz-eintrag" data-zu="' + x.i + '"><span>' + esc(x.t) + '</span><small>S. ' + (x.i + 1) + '</small></button>';
+      }).join('') : '<div class="nb-lz-leer">Die Gliederung entsteht aus deinen Lesezeichen. Gib ihnen einen Titel wie „Kapitel 3“.</div>') + '</div>';
+    } else {
+      inhalt = '<div class="nb-sl-text"><button class="nb-menue nb-aufnahme-start" data-start="1"><span class="nb-rec"></span>Neue Aufnahme</button><div class="nb-aufnahmen">' + aufnahmenHTML() + '</div></div>';
+    }
+    el.innerHTML = '<div class="nb-sl-tabs">' + tabs.map(function (t) {
+      return '<button class="' + (E.leisteTab === t[0] ? 'aktiv' : '') + '" data-tab="' + t[0] + '" title="' + t[2] + '">' + icon(t[1]) + '</button>';
+    }).join('') + '<button data-grid="1" title="Alle Seiten groß">' + icon('raster') + '</button></div><div class="nb-sl-inhalt">' + inhalt + '</div>';
+    if (E.leisteTab === 'audio') aufnahmenBinden(el);
+    const gitter = el.querySelector('.nb-sl-sortierbar');
+    if (gitter) el._sort = sortierbar(gitter, function () { seitenleisteMarkieren(); });
+    seitenleisteMarkieren();
+    (async function () {
+      const kacheln = $$(el, '.nb-sl-seite');
+      for (const k of kacheln) {
+        if (!k.isConnected || !E) return;
+        const s = E.seiten.find(function (x) { return x.id === k.getAttribute('data-id'); });
+        if (!s) continue;
+        try { const c = await seiteRendern(s, 180), z = k.querySelector('canvas'); z.width = c.width; z.height = c.height; z.getContext('2d').drawImage(c, 0, 0); } catch (e) { }
+      }
+    })();
+  }
+  function seitenleisteKlick(e) {
+    const el = E.el.seitenleiste;
+    if (el._sort && el._sort.unterdruecken && e.target.closest('.nb-sl-gitter')) { el._sort.unterdruecken = false; return; }
+    const t = e.target.closest('[data-tab]');
+    if (t) { E.leisteTab = t.getAttribute('data-tab'); seitenleisteBauen(); return; }
+    if (e.target.closest('[data-grid]')) { uebersichtZeigen(); return; }
+    if (e.target.closest('[data-neu]')) { seiteHinzufuegen(E.seiten.length - 1); seitenleisteBauen(); return; }
+    const zu = e.target.closest('[data-zu]');
+    if (zu && E.leisteTab === 'gliederung') { zuSeite(Number(zu.getAttribute('data-zu'))); return; }
+    if (E.leisteTab === 'audio') { if (e.target.closest('[data-start]')) aufnahmeStarten(); return; }
+    const kachel = e.target.closest('.nb-sl-seite');
+    if (!kachel) return;
+    const i = E.seiten.findIndex(function (x) { return x.id === kachel.getAttribute('data-id'); });
+    if (i < 0) return;
+    if (e.target.closest('[data-weg]')) { if (confirm('Seite ' + (i + 1) + ' wirklich löschen?')) { seiteLoeschen(i); seitenleisteBauen(); } return; }
+    if (e.target.closest('[data-kopie]')) { seiteDuplizieren(i); seitenleisteBauen(); return; }
+    zuSeite(i);
+  }
+  function seitenleisteMarkieren() {
+    const el = E && E.el.seitenleiste;
+    if (!el) return;
+    const id = E.seiten[aktuelleSeite()] && E.seiten[aktuelleSeite()].id;
+    $$(el, '.nb-sl-seite').forEach(function (k, n) {
+      const an = k.getAttribute('data-id') === id;
+      if (an !== k.classList.contains('aktuell')) { k.classList.toggle('aktuell', an); if (an) k.scrollIntoView({ block: 'nearest' }); }
+      const i = E.seiten.findIndex(function (x) { return x.id === k.getAttribute('data-id'); }), s = E.seiten[i], nr = k.querySelector('.nb-ueb-nr');
+      if (nr && s) { const t = (i + 1) + (s.lz && s.lz.t ? ' · ' + s.lz.t : ''); if (nr.textContent !== t) nr.textContent = t; }
+    });
+  }
+
+  function sortierbar(gitter, danach) {
+    const st = { unterdruecken: false };
     /* Ziehen: Finger lange drücken, Maus/Stift einfach ziehen */
     let zug = null;
     gitter.addEventListener('pointerdown', function (e) {
@@ -2391,10 +3628,11 @@
       cancelAnimationFrame(z.raf);
       z.geist.remove();
       z.kachel.classList.remove('nb-ueb-platz');
-      unterdruecken = true;
-      setTimeout(function () { unterdruecken = false; }, 350);
+      st.unterdruecken = true;
+      setTimeout(function () { st.unterdruecken = false; }, 350);
       const nachher = $$(gitter, '.nb-ueb-seite').map(function (k) { return k.getAttribute('data-id'); });
       seitenVerschieben(z.vorher, nachher);
+      if (danach) danach();
       $$(gitter, '.nb-ueb-seite').forEach(function (k, i) {
         const s = E.seiten[i];
         k.querySelector('.nb-ueb-nr').innerHTML = (i + 1) + (s && s.lz && s.lz.t ? ' · ' + esc(s.lz.t) : '');
@@ -2403,6 +3641,45 @@
     gitter.addEventListener('pointerup', zugEnde);
     gitter.addEventListener('pointercancel', zugEnde);
     gitter.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    return st;
+  }
+
+  /* ---------- Seitenübersicht (mit Sortieren per Ziehen) ---------- */
+  function uebersichtZeigen() {
+    textBeenden();
+    if (E.uebersicht) E.uebersicht.remove();
+    const ov = document.createElement('div');
+    ov.className = 'nb-uebersicht';
+    ov.innerHTML = '<div class="nb-ueb-kopf"><b>Seiten</b><span class="nb-ueb-zahl">' + E.seiten.length + '</span>' +
+      '<button class="btn btn-klein" data-u="neu">+ Seite</button><button class="nb-knopf" data-u="zu" aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
+      '<div class="nb-ueb-tipp">Zum Sortieren eine Seite gedrückt halten und ziehen.</div>' +
+      '<div class="nb-ueb-gitter">' + E.seiten.map(function (s, i) {
+        return '<div class="nb-ueb-seite" data-id="' + s.id + '"><div class="nb-ueb-bild" style="aspect-ratio:' + s.b + '/' + s.h + '"><canvas></canvas>' +
+          (s.lz ? '<span class="nb-ueb-band" title="' + esc(lesezeichenTitel(s, i)) + '"></span>' : '') + '</div>' +
+          '<div class="nb-ueb-fuss"><span class="nb-ueb-nr">' + (i + 1) + (s.lz && s.lz.t ? ' · ' + esc(s.lz.t) : '') + '</span>' +
+          '<button data-kopie="1" aria-label="Seite duplizieren" title="Duplizieren">' + icon('kopieren') + '</button>' +
+          '<button data-weg="1" aria-label="Seite löschen" title="Löschen">' + icon('loeschen') + '</button></div></div>';
+      }).join('') + '</div>';
+    E.el.root.appendChild(ov);
+    E.uebersicht = ov;
+    const gitter = ov.querySelector('.nb-ueb-gitter');
+    function indexVon(kachel) { return E.seiten.findIndex(function (x) { return x.id === kachel.getAttribute('data-id'); }); }
+    function schliessen() { ov.remove(); if (E) E.uebersicht = null; }
+    ov.addEventListener('click', function (e) {
+      if (sortSt.unterdruecken && e.target.closest('.nb-ueb-gitter')) { sortSt.unterdruecken = false; e.stopPropagation(); return; }
+      const kachel = e.target.closest('.nb-ueb-seite');
+      if (e.target.closest('[data-weg]') && kachel) {
+        const i = indexVon(kachel);
+        if (i >= 0 && confirm('Seite ' + (i + 1) + ' wirklich löschen?')) { schliessen(); seiteLoeschen(i); }
+        return;
+      }
+      if (e.target.closest('[data-kopie]') && kachel) { const i = indexVon(kachel); schliessen(); seiteDuplizieren(i); return; }
+      const u = e.target.closest('[data-u]');
+      if (u) { const a = u.getAttribute('data-u'); schliessen(); if (a === 'neu') seiteHinzufuegen(E.seiten.length - 1); return; }
+      if (kachel) { const i = indexVon(kachel); schliessen(); if (i >= 0) zuSeite(i); }
+    });
+
+    const sortSt = sortierbar(gitter);
 
     (async function () {
       const kacheln = $$(ov, '.nb-ueb-seite');
@@ -2450,14 +3727,9 @@
         '<div class="nb-zeile">' +
           '<button class="nb-knopf nb-zurueck" data-nb-aktion="zurueck" aria-label="Zurück zu den Notizbüchern">' + icon('zurueck') + '</button>' +
           '<div class="nb-buchtitel"></div>' +
-          '<div class="nb-werkzeuge">' +
-            ['fueller', 'kuli', 'pinsel', 'marker', 'radierer', 'lasso', 'text'].map(function (w) {
-              return '<button class="nb-knopf" data-nb-wz="' + w + '" title="' + NAMEN[w] + '" aria-label="' + NAMEN[w] + '">' + icon(w) +
-                (STIFTE.indexOf(w) >= 0 || w === 'marker' ? '<span class="nb-farbstrich"></span>' : '') + '</button>';
-            }).join('') +
-            '<button class="nb-knopf" data-nb-aktion="bild" title="Bild einfügen" aria-label="Bild einfügen">' + icon('bild') + '</button>' +
-            '<button class="nb-knopf" data-nb-aktion="lineal" title="Lineal" aria-label="Lineal">' + icon('lineal') + '</button>' +
-          '</div>' +
+          '<button class="nb-knopf" data-nb-aktion="seitenleiste" title="Seiten" aria-label="Seitenleiste">' + icon('seitenleiste') + '</button>' +
+          '<button class="nb-knopf" data-nb-aktion="nurlesen" title="Nur lesen" aria-label="Nur lesen">' + icon('lesen') + '</button>' +
+          '<div class="nb-werkzeuge">' + hauptLeisteHTML() + '</div>' +
           '<button class="nb-knopf nb-lz-knopf" data-nb-aktion="lesezeichen" title="Lesezeichen" aria-label="Lesezeichen">' + icon('lesezeichen') + '</button>' +
           '<button class="nb-knopf" data-nb-aktion="undo" title="Rückgängig" aria-label="Rückgängig">' + icon('undo') + '</button>' +
           '<button class="nb-knopf" data-nb-aktion="redo" title="Wiederholen" aria-label="Wiederholen">' + icon('redo') + '</button>' +
@@ -2506,7 +3778,17 @@
     root.querySelector('.nb-leiste').addEventListener('click', function (e) {
       const b = e.target.closest('button');
       if (!b) return;
-      if (b.hasAttribute('data-nb-wz')) { werkzeugWaehlen(b.getAttribute('data-nb-wz')); return; }
+      if (b.hasAttribute('data-nb-haupt')) {
+        const h = b.getAttribute('data-nb-haupt');
+        if (E.nurLesen) nurLesenUmschalten();
+        if (h !== 'bild' && h !== 'audio' && hauptWerkzeug(W.wz) === h) {     // zweiter Tipp: Einstellungen
+          if (h === 'stift') stiftPopover(E.el.zeile2.querySelector('.nb-uwz.aktiv') || b, W.wz);
+          else if (h === 'lasso') lassoFilterPopover(b);
+          else if (h === 'radierer') radiererFilterPopover(b);
+          return;
+        }
+        werkzeugWaehlen(h); return;
+      }
       const a = b.getAttribute('data-nb-aktion');
       if (a === 'zurueck') editorSchliessen();
       else if (a === 'undo') rueckgaengig();
@@ -2515,6 +3797,8 @@
       else if (a === 'bild') E.el.bildDatei.click();
       else if (a === 'lesezeichen') lesezeichenPopover(b);
       else if (a === 'lineal') linealUmschalten();
+      else if (a === 'nurlesen') nurLesenUmschalten();
+      else if (a === 'seitenleiste') seitenleisteUmschalten();
     });
     E.el.zeile2.addEventListener('click', zeile2Klick);
     E.el.seitenzahl.addEventListener('click', uebersichtZeigen);
@@ -2581,7 +3865,8 @@
       touches: new Map(), tap: null, verlauf: [], traegheit: null, mausPan: null,
       strich: null, radierer: null, lasso: null, auswahl: null, ziehen: null, versteckt: null,
       textAktiv: null, textNeu: null, textElemente: new Map(), textZiehen: null, textTipp: null, kachelTipp: false,
-      popover: null, uebersicht: null, planen: {}, el: null, ro: null
+      popover: null, uebersicht: null, planen: {}, el: null, ro: null,
+      tapeOffen: new Set(), formZug: null, laserZug: null, nurLesen: false, leseTipp: null
     };
     if (!buch.seiten || buch.seiten.length !== seiten.length) seiten.forEach(function (s) { E.dirty.add(s.id); });
     document.documentElement.classList.add('nb-offen');
@@ -2601,6 +3886,7 @@
   async function editorSchliessen() {
     if (!E) return;
     textBeenden();
+    if (E.aufnahme) { const f = E.aufnahme.fertig; E.aufnahme.rec.stop(); await f; }
     const ed = E;
     await speichern();
     await dateienAufraeumen(ed.buch, ed.seiten);
@@ -3223,7 +4509,8 @@
   function fingerabdruck(x) {
     if (!x) return '';
     const b = x.buch, weg = b.weg || {};
-    return JSON.stringify([b.titel, b.modul_id || null, b.cover, b.vorlage, b.papier, b.format || 'a4', b.ordner || '', (b.lernen || []).length, b.metaG || 0, x.seiten.map(function (s) { return s.id + ':' + seitenZeit(s); }),
+    return JSON.stringify([b.titel, b.modul_id || null, b.cover, b.vorlage, b.papier, b.format || 'a4', b.ordner || '', (b.lernen || []).length, b.metaG || 0,
+      (b.aufnahmen || []).map(function (a) { return a.id; }).join(','), x.seiten.map(function (s) { return s.id + ':' + seitenZeit(s); }),
       Object.keys(weg).sort().map(function (k) { return k + ':' + weg[k]; })]);
   }
   /* Zwei Fassungen eines Notizbuchs vereinen: pro Seite gewinnt die zuletzt bearbeitete */
@@ -3253,6 +4540,12 @@
     const buch = Object.assign({}, lb, {
       titel: meta.titel, modul_id: meta.modul_id || null, cover: meta.cover, vorlage: meta.vorlage, papier: meta.papier, metaG: meta.metaG || 0,
       format: meta.format || 'a4', ordner: meta.ordner || '', lernen: meta.lernen || [],
+      aufnahmenWeg: markenVereinen(rb.aufnahmenWeg, lb.aufnahmenWeg),
+      aufnahmen: (function () {
+        const weg = markenVereinen(rb.aufnahmenWeg, lb.aufnahmenWeg), m = new Map();
+        (rb.aufnahmen || []).concat(lb.aufnahmen || []).forEach(function (a) { if (a && a.id && !weg[a.id]) m.set(a.id, a); });
+        return Array.from(m.values()).sort(function (x, y) { return x.start - y.start; });
+      })(),
       weg: weg, geaendert: Math.max(lb.geaendert || 0, rb.geaendert || 0), erstellt: Math.min(lb.erstellt || jetzt(), rb.erstellt || jetzt())
     });
     let liste = reihe.map(function (id) { return seiten.get(id); });
@@ -3283,6 +4576,7 @@
       if (s.hg) ids.push(s.hg);
       (s.bilder || []).forEach(function (b) { ids.push(b.d); });
     });
+    (erg.buch.aufnahmen || []).forEach(function (a) { ids.push(a.d); });
     return ids;
   }
   function dateiSchluessel() { return transaktion(['dateien'], 'readonly', function (s) { return s.dateien.getAllKeys(); }); }
@@ -3885,8 +5179,7 @@
           '<input id="nbOrdner" type="text" maxlength="60" list="nbOrdnerListe" placeholder="Kein Ordner"><datalist id="nbOrdnerListe"></datalist></div>' +
         '<div class="feld"><label>Cover</label><div class="nb-farbwahl" id="nbCover"></div></div>' +
         '<div class="feld"><label id="nbFormatLabel">Format</label><div class="nb-formatwahl" id="nbFormat"></div></div>' +
-        '<div class="feld nb-nur-neu"><label>Papier</label><div class="nb-vorlagen" id="nbVorlage"></div></div>' +
-        '<div class="feld nb-nur-neu"><label>Papierfarbe</label><div class="nb-papierwahl" id="nbPapier"></div></div>' +
+        '<div class="feld nb-nur-neu"><label>Papier</label><button type="button" class="nb-vorlage-wahl" id="nbVorlage"><canvas></canvas><span><b></b><small></small></span><em>Ändern</em></button></div>' +
         '<div class="feld nb-nur-neu"><button class="btn btn-klein" id="nbPdfWahl" type="button">Aus PDF erstellen …</button> <span class="nb-hinweistext" id="nbPdfName"></span>' +
           '<input type="file" accept="application/pdf,.pdf" class="nb-unsichtbar" id="nbPdfDatei"></div>' +
       '</div>' +
@@ -3900,18 +5193,16 @@
       const b = e.target.closest('[data-c]'); if (!b) return;
       dlgZustand.cover = Number(b.getAttribute('data-c')); dialogAuswahlZeigen();
     });
-    q('#nbVorlage').addEventListener('click', function (e) {
-      const b = e.target.closest('[data-v]'); if (!b) return;
-      dlgZustand.vorlage = b.getAttribute('data-v'); dialogAuswahlZeigen();
+    q('#nbVorlage').addEventListener('click', function () {
+      const z = dlgZustand;
+      vorlageGalerie({ titel: 'Papier wählen', v: z.vorlage, papier: z.papier, quer: z.quer, format: z.format,
+        fertig: function (w) { z.vorlage = w.v; z.papier = w.papier; z.quer = w.quer; dialogAuswahlZeigen(); } });
     });
     q('#nbFormat').addEventListener('click', function (e) {
       const b = e.target.closest('[data-f]'); if (!b) return;
       dlgZustand.format = b.getAttribute('data-f'); dialogAuswahlZeigen();
     });
-    q('#nbPapier').addEventListener('click', function (e) {
-      const b = e.target.closest('[data-p]'); if (!b) return;
-      dlgZustand.papier = b.getAttribute('data-p'); dialogAuswahlZeigen();
-    });
+
     q('#nbPdfWahl').addEventListener('click', function () { q('#nbPdfDatei').click(); });
     q('#nbPdfDatei').addEventListener('change', function () {
       const d = this.files && this.files[0];
@@ -3947,21 +5238,19 @@
     dlg.querySelector('#nbCover').innerHTML = COVER.map(function (c, i) {
       return '<button type="button" data-c="' + i + '" class="' + (z.cover === i ? 'aktiv' : '') + '" style="--c1:' + c[0] + ';--c2:' + c[1] + '" aria-label="Cover ' + (i + 1) + '"></button>';
     }).join('');
-    dlg.querySelector('#nbVorlage').innerHTML = VORLAGEN.map(function (v) {
-      return '<button type="button" data-v="' + v[0] + '" class="' + (z.vorlage === v[0] ? 'aktiv' : '') + '"><span class="nb-vl nb-vl-' + v[0] + '" style="background-color:' + PAPIER[z.papier] + '"></span>' + v[1] + '</button>';
-    }).join('');
+    const vw = dlg.querySelector('#nbVorlage'), vn = VORLAGEN.find(function (v) { return v[0] === z.vorlage; });
+    vw.querySelector('b').textContent = vn ? vn[1] : z.vorlage;
+    vw.querySelector('small').textContent = (PAPIER_NAMEN.find(function (p) { return p[0] === z.papier; }) || ['', 'Weiß'])[1] + ' · ' + (z.quer ? 'Querformat' : 'Hochformat');
+    requestAnimationFrame(function () { vorlageVorschau(vw.querySelector('canvas'), z.vorlage, z.papier, z.quer, z.format); });
     dlg.querySelector('#nbFormat').innerHTML = [['a4', 'A4', '21 × 29,7 cm'], ['a5', 'A5', '14,8 × 21 cm']].map(function (f) {
       return '<button type="button" data-f="' + f[0] + '" class="' + (z.format === f[0] ? 'aktiv' : '') + '"><span class="nb-format-bild nb-format-' + f[0] + '"></span><b>' + f[1] + '</b><small>' + f[2] + '</small></button>';
-    }).join('');
-    dlg.querySelector('#nbPapier').innerHTML = [['weiss', 'Weiß'], ['creme', 'Creme']].map(function (p) {
-      return '<button type="button" data-p="' + p[0] + '" class="' + (z.papier === p[0] ? 'aktiv' : '') + '"><span style="background:' + PAPIER[p[0]] + '"></span>' + p[1] + '</button>';
     }).join('');
   }
   function dialogOeffnen(id, vorgabeModul) {
     dialogBauen();
     const b = id ? buecher.find(function (x) { return x.id === id; }) : null;
-    dlgZustand = b ? { id: b.id, cover: b.cover || 0, vorlage: b.vorlage, papier: b.papier, format: b.format || 'a4', pdf: null }
-      : { id: null, cover: Math.floor(Math.random() * 8), vorlage: 'liniert', papier: 'weiss', format: W.format || 'a4', pdf: null };
+    dlgZustand = b ? { id: b.id, cover: b.cover || 0, vorlage: b.vorlage, papier: b.papier, format: b.format || 'a4', quer: !!b.quer, pdf: null }
+      : { id: null, cover: Math.floor(Math.random() * 8), vorlage: W.vorlage || 'liniert', papier: W.papier || 'weiss', format: W.format || 'a4', quer: false, pdf: null };
     dlg.querySelector('#nbOrdner').value = b ? (b.ordner || '') : (ordnerOffen && ordnerOffen !== '__ohne__' ? ordnerOffen : '');
     dlg.querySelector('#nbOrdnerListe').innerHTML = ordnerListe().map(function (o) { return '<option value="' + esc(o) + '"></option>'; }).join('');
     dlg.querySelector('#nbFormatLabel').textContent = b ? 'Format für neue Seiten' : 'Format';
@@ -4007,7 +5296,8 @@
       return;
     }
     dlg.close();
-    const daten = { titel: titel, modul_id: modul, cover: z.cover, vorlage: z.vorlage, papier: z.papier, format: z.format, ordner: dlg.querySelector('#nbOrdner').value.trim() };
+    const daten = { titel: titel, modul_id: modul, cover: z.cover, vorlage: z.vorlage, papier: z.papier, format: z.format, quer: z.quer, ordner: dlg.querySelector('#nbOrdner').value.trim() };
+    W.vorlage = z.vorlage; W.papier = z.papier;
     W.format = z.format; werkzeugSpeichern();
     try {
       const b = z.pdf ? await buchAusPdf(daten, z.pdf) : await buchAnlegen(daten);
@@ -4162,6 +5452,7 @@ html.nb-offen,html.nb-offen body{overflow:hidden;overscroll-behavior:none}
 .nb-farbe{width:28px;height:28px;flex:0 0 28px;border-radius:50%;border:0;padding:0;background:var(--f);box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);cursor:pointer}
 .nb-farbe.aktiv{box-shadow:0 0 0 2px var(--nb-ring,#fff),0 0 0 4px var(--accent)}
 :root[data-thema="dunkel"] .nb-farbe.aktiv{--nb-ring:#1e2034}
+:root[data-thema="dunkel"] .nb-farbe:not(.aktiv):not(.nb-farbe-plus){box-shadow:inset 0 0 0 1px rgba(255,255,255,.28)}
 .nb-breite{width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:0;background:transparent;color:var(--text);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
 .nb-breite span{display:block;border-radius:50%;background:currentColor}
 .nb-breite.aktiv{background:rgba(10,122,255,.15);color:var(--accent)}
@@ -4394,8 +5685,148 @@ dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
   .nb-knopf svg{width:21px;height:21px}
   .nb-vorlagen{grid-template-columns:repeat(3,1fr)}
   .nb-segment button{padding:6px 8px}
+  .nb-werkzeuge{gap:0}
+  .nb-werkzeuge .nb-knopf{width:35px;flex-basis:35px}
 }
 @media (prefers-reduced-motion: reduce){.nb-kreisel{animation:none}}
+/* ===== Werkzeugleiste wie GoodNotes ===== */
+.nb-zeile2{width:fit-content;max-width:calc(100% - 8px);margin:6px auto 0;padding:4px 8px;border-radius:16px;border:1px solid var(--kante);
+  background:var(--glanz),rgba(255,255,255,.72);box-shadow:var(--licht),0 6px 18px rgba(20,30,70,.12);min-height:40px}
+:root[data-thema="dunkel"] .nb-zeile2{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0)),rgba(20,22,34,.9)}
+.nb-zeile2:empty{display:none}
+.nb-unterwz{gap:2px}
+.nb-uwz{position:relative;width:38px;height:34px;flex:0 0 38px;border:0;border-radius:10px;background:transparent;color:var(--text);display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
+.nb-uwz svg{width:21px;height:21px}
+.nb-uwz.aktiv{background:var(--accent);color:#fff}
+.nb-uwz .nb-pfeilchen{position:absolute;right:1px;bottom:3px;width:10px;height:10px;opacity:.75}
+.nb-uwz .nb-pfeilchen svg{width:10px;height:10px;stroke-width:2.4}
+.nb-uwz:first-child{width:44px;flex-basis:44px}
+.nb-breite i{display:block;width:20px;border-radius:3px;background:currentColor}
+.nb-farbe-plus{background:transparent!important;box-shadow:inset 0 0 0 1.5px var(--muted2)!important;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.nb-farbe-plus svg{width:15px;height:15px}
+.nb-mini svg,.nb-schalter svg{width:17px;height:17px;vertical-align:-3px}
+.nb-mini{display:inline-flex;align-items:center;gap:4px}
+.nb-mini.aktiv{background:var(--accent);color:#fff;border-color:transparent}
+.nb-dropdown{display:inline-flex;align-items:center;gap:6px}
+.nb-dropdown svg:last-child{width:13px;height:13px}
+.nb-segment button{display:inline-flex;align-items:center;gap:5px}
+.nb-segment button svg{width:16px;height:16px}
+.nb-knopf[hidden]{display:none}
+.nb-knopf.nimmt-auf{color:#FF3B30;background:rgba(255,59,48,.14)}
+.nb-editor.nb-nurlesen .nb-werkzeuge{opacity:.45}
+/* Popover-Inhalte */
+.nb-pop-stift{width:300px}
+.nb-popover .nb-vorschau{display:block;width:100%;height:64px;margin:0 0 8px;border-radius:12px;background:rgba(127,127,140,.08)}
+.nb-stiftarten{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.nb-stiftarten button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 4px;border:1px solid transparent;border-radius:12px;background:rgba(127,127,140,.08);color:var(--text);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.nb-stiftarten button svg{width:22px;height:22px}
+.nb-stiftarten button.aktiv{border-color:var(--accent);color:var(--accent);background:rgba(10,122,255,.1)}
+.nb-regler-feld{margin:6px 2px 10px}
+.nb-regler-kopf{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.nb-regler-kopf b{color:var(--text)}
+.nb-regler-spur{position:relative}
+.nb-regler-spur .nb-regler{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;position:relative;z-index:1;margin:0}
+.nb-regler-spur .nb-regler::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,#4FC3F7 var(--v,50%),rgba(127,127,140,.3) var(--v,50%))}
+.nb-regler-spur .nb-regler::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(90deg,#4FC3F7 var(--v,50%),rgba(127,127,140,.3) var(--v,50%))}
+.nb-regler-spur .nb-regler::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:5px solid #2F9BFF;margin-top:-8px;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.nb-regler-spur .nb-regler::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;border:5px solid #2F9BFF}
+.nb-ticks{position:absolute;left:2px;right:2px;top:7px;height:8px;display:flex;justify-content:space-between;pointer-events:none}
+.nb-ticks i{width:2px;height:8px;border-radius:1px;background:rgba(127,127,140,.45)}
+.nb-umschalter small{display:block;font-size:12px;color:var(--muted);font-weight:400;margin-top:2px;line-height:1.35}
+.nb-umschalter.nb-mit-icon{justify-content:flex-start}
+.nb-umschalter.nb-mit-icon span{flex:1}
+.nb-umschalter.nb-mit-icon>svg{width:20px;height:20px;flex:0 0 20px;color:var(--muted)}
+.nb-pfeilmenue{display:flex!important;align-items:center;justify-content:space-between}
+.nb-pfeilmenue svg{width:16px;height:16px;color:var(--muted)}
+.nb-mit-icon{display:flex!important;align-items:center;gap:10px}
+.nb-mit-icon>svg{width:18px;height:18px;flex:0 0 18px;color:var(--muted)}
+.nb-mit-icon small{margin-left:auto;color:var(--muted);font-size:12px}
+.nb-zurueckpfeil{border:0;background:transparent;color:var(--accent);width:28px;height:28px;padding:4px;margin:-4px 4px -4px -4px;cursor:pointer}
+.nb-zurueckpfeil svg{width:100%;height:100%}
+.nb-pop-titel{align-items:center}
+.nb-pop-hinweis{font-size:12.5px;color:var(--muted);padding:4px 6px 6px;line-height:1.4}
+.nb-pop-farbe{width:260px}
+.nb-farbgitter{grid-template-columns:repeat(5,34px)!important;gap:10px!important}
+.nb-farbgitter button{width:34px!important;height:34px!important}
+.nb-regenbogen{width:22px;height:22px;border-radius:50%;background:conic-gradient(#FF3B30,#FF9500,#FFD60A,#30D158,#0A84FF,#BF5AF2,#FF3B30);margin-right:10px;flex:0 0 22px}
+.nb-pfeilmenue:has(.nb-regenbogen){justify-content:flex-start;gap:0}
+.nb-pfeilmenue:has(.nb-regenbogen) svg{margin-left:auto}
+.nb-pop-titel:has(.nb-zurueckpfeil){justify-content:flex-start}
+.nb-hexvorschau{display:block;flex:0 0 34px}
+.nb-sv{position:relative;height:150px;border-radius:12px;margin:4px 0 12px;cursor:crosshair;touch-action:none;
+  background:linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,hsl(var(--h,0),100%,50%))}
+.nb-sv-punkt{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.3);pointer-events:none}
+.nb-farbton{-webkit-appearance:none;appearance:none;width:100%;height:14px;border-radius:7px;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);margin:0 0 12px}
+.nb-farbton::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.35)}
+.nb-hexzeile{display:flex;align-items:center;gap:10px}
+.nb-hexvorschau{width:34px;height:34px;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.nb-hex{flex:1;border:1px solid var(--kante);border-radius:10px;padding:8px 10px;font:inherit;font-size:16px;font-family:ui-monospace,Menlo,monospace;background:rgba(255,255,255,.7);color:var(--text)}
+:root[data-thema="dunkel"] .nb-hex{background:rgba(255,255,255,.07)}
+/* Umkreisen, Zettel, Aufnahme */
+.nb-umkreis{position:absolute;z-index:4;display:flex;align-items:center;gap:6px;border:0;border-radius:12px;padding:7px 12px;background:var(--accent);color:#fff;font:inherit;font-size:13.5px;font-weight:650;box-shadow:0 8px 20px rgba(10,122,255,.35);cursor:pointer;animation:nb-auf .18s ease}
+.nb-umkreis svg{width:17px;height:17px}
+@keyframes nb-auf{from{transform:scale(.8);opacity:0}to{transform:none;opacity:1}}
+.nb-text.nb-zettel .nb-text-inhalt{padding:10px;border-radius:3px;box-shadow:0 3px 8px rgba(0,0,0,.18);color:#1D1D1F}
+.nb-editor.wz-zettel .nb-text.nb-zettel{pointer-events:auto}
+.nb-editor.wz-zettel .nb-zettel.aktiv .nb-text-inhalt{box-shadow:0 0 0 2px var(--accent),0 3px 8px rgba(0,0,0,.18)}
+.nb-text.nb-zettel .nb-text-inhalt:empty::before{content:"Notiz …"}
+.nb-aufnahme-anzeige{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:7px 14px;background:rgba(28,28,34,.92);color:#fff;font:inherit;font-size:14px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.nb-aufnahme-anzeige span:last-child{color:#FF8A80;font-weight:650}
+.nb-rec{width:11px;height:11px;border-radius:50%;background:#FF3B30;display:inline-block;animation:nb-puls 1.2s infinite}
+@keyframes nb-puls{50%{opacity:.35}}
+.nb-aufnahme-start{display:flex!important;align-items:center;gap:10px}
+.nb-aufnahmen{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow-y:auto}
+.nb-aufnahme{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:10px}
+.nb-aufnahme>div{flex:1;min-width:0}
+.nb-aufnahme b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-aufnahme small{font-size:12px;color:var(--muted)}
+.nb-aufnahme audio{display:none}
+.nb-play{width:34px;height:34px;flex:0 0 34px;border-radius:50%;border:0;background:var(--accent);color:#fff;padding:9px;cursor:pointer}
+.nb-play svg{width:100%;height:100%}
+/* Seitenleiste */
+.nb-seitenleiste{position:absolute;left:0;bottom:0;width:236px;z-index:3;display:flex;flex-direction:column;border-right:1px solid var(--kante);
+  background:var(--glanz),rgba(246,247,252,.94);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+:root[data-thema="dunkel"] .nb-seitenleiste{background:rgba(22,24,36,.96)}
+.nb-editor.mit-leiste .nb-flaeche{margin-left:236px}
+.nb-sl-tabs{display:flex;gap:2px;padding:8px;border-bottom:1px solid var(--kante)}
+.nb-sl-tabs button{flex:1;height:34px;border:0;border-radius:10px;background:transparent;color:var(--muted);padding:6px;cursor:pointer}
+.nb-sl-tabs button svg{width:20px;height:20px}
+.nb-sl-tabs button.aktiv{background:rgba(10,122,255,.14);color:var(--accent)}
+.nb-sl-inhalt{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.nb-sl-gitter{display:flex;flex-direction:column;gap:14px;padding:14px 22px 24px}
+.nb-sl-seite .nb-ueb-bild{border-radius:5px;outline:2px solid transparent;outline-offset:3px;transition:outline-color .15s}
+.nb-sl-seite.aktuell .nb-ueb-bild{outline-color:var(--accent)}
+.nb-sl-seite.aktuell .nb-ueb-nr{color:var(--accent)}
+.nb-sl-neu{display:flex;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--muted2);border-radius:10px;background:transparent;color:var(--muted);padding:14px;font:inherit;font-weight:600;cursor:pointer}
+.nb-sl-neu svg{width:18px;height:18px}
+.nb-sl-text{padding:10px}
+/* Vorlagen-Galerie */
+dialog.nb-galerie-dlg{border:0;padding:0;background:transparent;width:min(760px,96vw);max-width:96vw;height:min(88vh,860px);max-height:none;overflow:visible;box-shadow:none}
+dialog.nb-galerie-dlg::backdrop{background:rgba(15,18,40,.35);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+dialog.nb-galerie-dlg .nb-ki-karte{width:100%;height:100%;max-height:none}
+.nb-gal-optionen{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--kante)}
+.nb-gal-optionen .nb-papierwahl{flex-wrap:wrap}
+.nb-gal-optionen .nb-papierwahl button{padding:6px 10px}
+.nb-gal-liste{padding:6px 16px 16px}
+.nb-gal-gruppe h4{margin:14px 0 8px;font-size:14px}
+.nb-gal-reihe{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:14px}
+.nb-gal-v{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:transparent;padding:0;color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.nb-gal-v canvas{width:100%;border-radius:6px;box-shadow:0 2px 8px rgba(20,25,60,.16),inset 0 0 0 1px rgba(0,0,0,.08);outline:2.5px solid transparent;outline-offset:2px}
+.nb-gal-v.aktiv canvas{outline-color:var(--accent)}
+.nb-gal-v.aktiv span{color:var(--accent)}
+.nb-gal-alle{display:flex;align-items:center;gap:8px;font-size:14px}
+.nb-vorlage-wahl{display:flex;align-items:center;gap:12px;width:100%;padding:8px 12px;border:1px solid var(--kante);border-radius:12px;background:rgba(255,255,255,.5);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+:root[data-thema="dunkel"] .nb-vorlage-wahl{background:rgba(255,255,255,.06)}
+.nb-vorlage-wahl canvas{width:38px;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.nb-vorlage-wahl span{flex:1;display:flex;flex-direction:column}
+.nb-vorlage-wahl small{color:var(--muted);font-size:12.5px}
+.nb-vorlage-wahl em{font-style:normal;color:var(--accent);font-weight:600;font-size:14px}
+@media (max-width:560px){
+  .nb-zeile2{margin-top:4px;border-radius:14px;padding:3px 6px}
+  .nb-uwz{width:34px;flex-basis:34px}
+  dialog.nb-galerie-dlg{width:100vw;max-width:100vw;height:100%;margin:0}
+  dialog.nb-galerie-dlg .nb-ki-karte{border-radius:0}
+}
 `;
 
   /* ============================================================
