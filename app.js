@@ -851,6 +851,9 @@ function starteApp() {
     if (window.Notizen) h += '<div data-nb-einstellungen="1"></div>';
     if (window.Assistent) h += '<div data-ki-einstellungen="1"></div>';
 
+    h += '<div class="box"><h3>Version</h3><p>SchulPlaner Version ' + VERSION + '.</p>' +
+      '<button class="btn" data-neuigkeiten="1">Was ist neu?</button></div>';
+
     h += '<div class="box"><h3>Hinweis</h3><p>Alles wird sofort auf dem Gerät gespeichert und funktioniert auch ohne Internet. ' +
       'Sobald wieder Verbindung besteht, wird automatisch abgeglichen. Wird dieselbe Aufgabe auf beiden Geräten geändert, ' +
       'gewinnt die zuletzt gespeicherte Version.</p></div>';
@@ -1095,6 +1098,7 @@ function starteApp() {
       if (ziel('data-thema-umschalten')) { themaSetzen(istDunkel() ? 'hell' : 'dunkel'); return; }
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
       if (ziel('data-export')) { exportiere(); return; }
+      if (ziel('data-neuigkeiten')) { neuigkeitenZeigen(); return; }
       if (ziel('data-import')) { $('#importDatei').click(); return; }
       if ((el = ziel('data-farbe'))) { modulState.farbe = el.getAttribute('data-farbe'); zeichneFarben(); return; }
       if ((el = ziel('data-sub-weg'))) {
@@ -1212,7 +1216,61 @@ function starteApp() {
       });
     } catch (e) { console.error(e); }
   }
+  /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
+  // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
+  const VERSION = 13;
+  const NEUIGKEITEN = [
+    ['✍️', 'Schönere Schrift', 'Glatte, voll ausgefüllte Linien und deutlichere Strichstärken.'],
+    ['🔴', 'Laserpointer', 'Funktioniert jetzt zuverlässig, auch im Nur-lesen-Modus.'],
+    ['📓', 'Notizbücher wie GoodNotes', 'Viele Stifte, Formen, Tape, Notizzettel, Lasso, Lineal und Audio.'],
+    ['📄', 'Vorlagen', '19 Vorlagen in A4/A5, hoch oder quer, auch dunkles Papier.'],
+    ['☁️', 'Google Drive', 'Notizbücher auf allen Geräten abgleichen.'],
+    ['✨', 'KI-Assistent', 'Aufgaben anlegen, Fragen stellen, Karteikarten und Quiz.']
+  ];
+  function neuigkeitenZeigen() {
+    let dlg = document.getElementById('dlgNeu');
+    if (!dlg) {
+      const stil = document.createElement('style');
+      stil.textContent =
+        'dialog.neu-dlg{width:min(440px,92vw);max-width:92vw;height:fit-content;min-height:0;max-height:86vh;margin:auto;border-radius:26px;border:1px solid var(--kante)}' +
+        '.neu-dlg .dlg-koerper{max-height:calc(86vh - 80px);padding-top:24px}' +
+        '.neu-dlg h2{margin:0 0 2px;font-size:22px}' +
+        '.neu-dlg .neu-unter{color:var(--muted);font-size:13.5px;margin-bottom:14px}' +
+        '.neu-punkt{display:flex;gap:12px;align-items:flex-start;padding:8px 0}' +
+        '.neu-punkt .neu-icon{font-size:22px;line-height:1.2;flex:0 0 28px;text-align:center}' +
+        '.neu-punkt b{display:block;font-size:15px}' +
+        '.neu-punkt span{display:block;color:var(--muted);font-size:13.5px;line-height:1.4}' +
+        '.neu-dlg .dlg-fuss .btn{flex:1}';
+      document.head.appendChild(stil);
+      dlg = document.createElement('dialog');
+      dlg.id = 'dlgNeu';
+      dlg.className = 'neu-dlg';
+      document.body.appendChild(dlg);
+      dlg.addEventListener('click', function (e) {
+        if (e.target === dlg || e.target.closest('[data-neu-ok]')) dlg.close();
+      });
+    }
+    dlg.innerHTML = '<div class="dlg-koerper"><h2>Neu im SchulPlaner</h2>' +
+      '<div class="neu-unter">Version ' + VERSION + ' – du bist auf dem neuesten Stand.</div>' +
+      NEUIGKEITEN.map(function (n) {
+        return '<div class="neu-punkt"><div class="neu-icon">' + n[0] + '</div><div><b>' + esc(n[1]) + '</b><span>' + esc(n[2]) + '</span></div></div>';
+      }).join('') + '</div>' +
+      '<div class="dlg-fuss"><button class="btn btn-primary" data-neu-ok="1">Los geht’s</button></div>';
+    if (!dlg.open) dlg.showModal();
+    const ok = dlg.querySelector('[data-neu-ok]');
+    if (ok) ok.blur();                                  // kein Fokusrahmen beim Öffnen
+  }
+  function neuigkeitenPruefen() {
+    let gesehen = 0;
+    try { gesehen = Number(localStorage.getItem('schulplaner.version')) || 0; } catch (e) { }
+    if (gesehen >= VERSION) return;
+    try { localStorage.setItem('schulplaner.version', String(VERSION)); } catch (e) { }
+    if (document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return;
+    neuigkeitenZeigen();
+  }
+
   render();
+  setTimeout(neuigkeitenPruefen, 700);
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();
   setInterval(function () { tageswechselPruefen(); themaNachpruefen(); }, 20000);
