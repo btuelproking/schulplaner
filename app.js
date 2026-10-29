@@ -1218,14 +1218,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 13;
+  const VERSION = 14;
   const NEUIGKEITEN = [
-    ['✍️', 'Schönere Schrift', 'Glatte, voll ausgefüllte Linien und deutlichere Strichstärken.'],
-    ['🔴', 'Laserpointer', 'Funktioniert jetzt zuverlässig, auch im Nur-lesen-Modus.'],
-    ['📓', 'Notizbücher wie GoodNotes', 'Viele Stifte, Formen, Tape, Notizzettel, Lasso, Lineal und Audio.'],
-    ['📄', 'Vorlagen', '19 Vorlagen in A4/A5, hoch oder quer, auch dunkles Papier.'],
-    ['☁️', 'Google Drive', 'Notizbücher auf allen Geräten abgleichen.'],
-    ['✨', 'KI-Assistent', 'Aufgaben anlegen, Fragen stellen, Karteikarten und Quiz.']
+    ['📸', 'Bilder im KI-Assistenten', 'Schick einen Screenshot oder ein Foto deiner Aufgabe – der Assistent liest es und trägt die Aufgabe ins richtige Modul ein. Tippe dazu auf das Bild-Symbol im Chat.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

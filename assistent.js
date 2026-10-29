@@ -16,6 +16,8 @@
 
   let K = null, offen = false, laeuft = false, abbrechen = null;
   let el = null;
+  let anhaenge = [];                            // Bilder, die mit der nächsten Nachricht mitgehen
+  const MAX_BILDER = 4;
   let verlauf = { inhalte: [], anzeige: [] };   // inhalte: Gemini-Format, anzeige: was im Chat steht
 
   /* ---------- Hilfen ---------- */
@@ -56,7 +58,14 @@
     }
     verlauf.inhalte = i;
     if (verlauf.anzeige.length > 60) verlauf.anzeige = verlauf.anzeige.slice(-60);
-    schreiben(VERLAUF_KEY, verlauf);
+    // Bilder bleiben nur bis zum Neuladen im Gespräch, gespeichert wird ein Platzhalter
+    schreiben(VERLAUF_KEY, {
+      inhalte: i.map(function (c) {
+        if (!c.parts || !c.parts.some(function (p) { return p.inlineData; })) return c;
+        return { role: c.role, parts: c.parts.map(function (p) { return p.inlineData ? { text: '[Bild – nicht mehr verfügbar]' } : p; }) };
+      }),
+      anzeige: verlauf.anzeige
+    });
   }
 
   /* ---------- Was der Assistent über die App weiß ---------- */
@@ -97,6 +106,7 @@
       '- Beim Strukturieren großer Aufgaben: sinnvolle Unteraufgaben anlegen.',
       '- Löschen nur, wenn der Schüler es ausdrücklich will.',
       '- Fasse nach Änderungen in einem Satz zusammen, was du getan hast. Die App zeigt die Änderungen zusätzlich an.',
+      '- Schickt der Schüler ein Bild (z. B. Screenshot einer Aufgabe aus Moodle oder Teams, Foto vom Heft oder der Tafel), lies es genau: Fach, was zu tun ist (Seiten, Nummern, Thema) und Abgabedatum. Trag jede Aufgabe darauf mit aufgabe_anlegen ins passende Modul ein (vorher mit aufgaben_auflisten auf Duplikate prüfen), wichtige Details in notizen. Steht beim Datum kein Jahr, nimm das nächste passende Datum. Ist auf dem Bild keine Aufgabe, beantworte einfach die Frage dazu.',
       '- Bei Stofffragen (Mathe, Deutsch …) erkläre verständlich mit Beispiel. Bei Hausübungen: hilf beim Verstehen, statt nur die Lösung hinzuschreiben.',
       '- Formatierung: nur einfacher Text, **fett** und Listen mit „- “. Keine Tabellen.'
     ].join('\n');
@@ -334,17 +344,19 @@
     return kand.content;
   }
 
-  async function senden(text) {
+  async function senden(text, bilder) {
     text = String(text || '').trim();
-    if (!text || laeuft) return;
+    bilder = bilder || [];
+    if ((!text && !bilder.length) || laeuft) return;
     if (!cfg().schluessel) { hinweisOhneSchluessel(); return; }
     laeuft = true;
     knoepfe();
     const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     abbrechen = ctrl;
-    verlauf.anzeige.push({ wer: 'ich', text: text });
+    const frage = text || (bilder.length > 1 ? 'Trag die Aufgaben von diesen Bildern ein.' : 'Trag die Aufgabe von diesem Bild ein.');
+    verlauf.anzeige.push(bilder.length ? { wer: 'ich', text: text, bilder: bilder.map(function (b) { return b.vorschau; }) } : { wer: 'ich', text: text });
     const startLaenge = verlauf.inhalte.length;
-    verlauf.inhalte.push({ role: 'user', parts: [{ text: text }] });
+    verlauf.inhalte.push({ role: 'user', parts: bilder.map(function (b) { return { inlineData: { mimeType: 'image/jpeg', data: b.daten } }; }).concat([{ text: frage }]) });
     zeichnen(true);
     const aktionen = [];
     try {
@@ -378,7 +390,8 @@
       if (aktionen.length) verlauf.anzeige.push({ wer: 'ki', text: 'Bis dahin erledigt:', aktionen: aktionen });
       // unvollständige Runde aus dem Verlauf nehmen, damit der nächste Versuch sauber startet
       verlauf.inhalte = verlauf.inhalte.slice(0, startLaenge);
-      verlauf.inhalte.push({ role: 'user', parts: [{ text: text }] }, { role: 'model', parts: [{ text: aktionen.length
+      if (bilder.length && !anhaenge.length) { anhaenge = bilder; anhaengeZeichnen(); }   // Bilder zum erneuten Senden zurücklegen
+      verlauf.inhalte.push({ role: 'user', parts: [{ text: frage + (bilder.length ? ' [Bild]' : '') }] }, { role: 'model', parts: [{ text: aktionen.length
         ? '(Dabei trat ein Fehler auf. Schon erledigt: ' + aktionen.map(function (a) { return a.text; }).join('; ') + ')' : '(Fehler, keine Antwort)' }] });
     } finally {
       laeuft = false; abbrechen = null;
@@ -431,11 +444,14 @@
     let h = '';
     if (!verlauf.anzeige.length) {
       h = '<div class="ki-leer"><div class="ki-logo">' + FUNKE + '</div><b>Hallo! Wie kann ich helfen?</b>' +
-        '<span>Ich kann Aufgaben eintragen, ändern, planen und Fragen zum Stoff beantworten.</span>' +
+        '<span>Ich kann Aufgaben eintragen, ändern, planen und Fragen zum Stoff beantworten. Schick mir auch einen Screenshot einer Aufgabe – ich trag sie ein.</span>' +
         '<div class="ki-vorschlaege">' + VORSCHLAEGE.map(function (v) { return '<button data-ki-vorschlag="' + esc(v) + '">' + esc(v) + '</button>'; }).join('') + '</div></div>';
     }
     verlauf.anzeige.forEach(function (m, i) {
-      if (m.wer === 'ich') h += '<div class="ki-msg ki-ich">' + esc(m.text).replace(/\n/g, '<br>') + '</div>';
+      if (m.wer === 'ich') {
+        if (m.bilder && m.bilder.length) h += '<div class="ki-bilder">' + m.bilder.map(function (b) { return '<img src="' + esc(b) + '" alt="Bild">'; }).join('') + '</div>';
+        if (m.text) h += '<div class="ki-msg ki-ich">' + esc(m.text).replace(/\n/g, '<br>') + '</div>';
+      }
       else if (m.wer === 'fehler') h += '<div class="ki-msg ki-fehler">' + esc(m.text) + '</div>';
       else {
         h += '<div class="ki-msg ki-ki">' + formatieren(m.text);
@@ -454,6 +470,48 @@
     if (nachUnten) runter();
   }
   function runter() { if (el) el.liste.scrollTop = el.liste.scrollHeight; }
+
+  /* ---------- Bilder (Screenshots von Aufgaben) ---------- */
+  function bildVerkleinern(datei, max, qualitaet) {
+    return new Promise(function (ok, fehler) {
+      const url = URL.createObjectURL(datei), img = new Image();
+      img.onload = function () {
+        const f = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * f)); c.height = Math.max(1, Math.round(img.naturalHeight * f));
+        const x = c.getContext('2d');
+        x.fillStyle = '#FFFFFF'; x.fillRect(0, 0, c.width, c.height);         // durchsichtige Screenshots auf Weiß
+        x.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        ok(c.toDataURL('image/jpeg', qualitaet));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); fehler(new Error('Das Bild konnte nicht geöffnet werden.')); };
+      img.src = url;
+    });
+  }
+  async function bilderDazu(dateien) {
+    const liste = Array.prototype.filter.call(dateien || [], function (d) { return d && /^image\//.test(d.type); });
+    if (!liste.length) return;
+    let zuViele = false;
+    for (const d of liste) {
+      if (anhaenge.length >= MAX_BILDER) { zuViele = true; break; }
+      try {
+        const gross = await bildVerkleinern(d, 1600, 0.85), klein = await bildVerkleinern(d, 240, 0.7);
+        anhaenge.push({ daten: gross.slice(gross.indexOf(',') + 1), vorschau: klein });
+      } catch (e) { verlauf.anzeige.push({ wer: 'fehler', text: e.message }); zeichnen(true); }
+    }
+    if (zuViele) { verlauf.anzeige.push({ wer: 'fehler', text: 'Höchstens ' + MAX_BILDER + ' Bilder pro Nachricht.' }); zeichnen(true); }
+    anhaengeZeichnen();
+  }
+  function anhaengeZeichnen() {
+    if (!el) return;
+    el.anhaenge.hidden = !anhaenge.length;
+    el.anhaenge.innerHTML = anhaenge.map(function (a, i) {
+      return '<div class="ki-anhang"><img src="' + esc(a.vorschau) + '" alt="Bild ' + (i + 1) + '">' +
+        '<button type="button" data-ki-anhang-weg="' + i + '" aria-label="Bild entfernen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg></button></div>';
+    }).join('');
+    el.eingabe.placeholder = anhaenge.length ? 'Nachricht dazu (optional)' : 'Frag mich oder trag etwas ein …';
+  }
   function knoepfe() {
     if (!el) return;
     el.senden.hidden = laeuft; el.stopp.hidden = !laeuft;
@@ -481,12 +539,16 @@
       '<button class="ki-kopfknopf" data-ki-neu title="Neuer Chat" aria-label="Neuer Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
       '<button class="ki-kopfknopf" data-ki-zu title="Schließen" aria-label="Schließen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
       '<div class="ki-liste"></div>' +
-      '<form class="ki-form"><textarea rows="1" placeholder="Frag mich oder trag etwas ein …" aria-label="Nachricht"></textarea>' +
+      '<div class="ki-anhaenge" hidden></div>' +
+      '<form class="ki-form"><button type="button" class="ki-bildknopf" data-ki-bild title="Bild oder Screenshot anhängen" aria-label="Bild anhängen">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 15.5l-5-5-9 9"/></svg></button>' +
+      '<input type="file" accept="image/*" multiple hidden data-ki-datei>' +
+      '<textarea rows="1" placeholder="Frag mich oder trag etwas ein …" aria-label="Nachricht"></textarea>' +
       '<button type="submit" class="ki-senden" aria-label="Senden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg></button>' +
       '<button type="button" class="ki-stopp" hidden aria-label="Stopp"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button></form>' +
       '<div class="ki-fuss">KI kann Fehler machen – prüfe wichtige Termine.</div>';
     document.body.appendChild(p);
-    el = { knopf: knopf, panel: p, liste: p.querySelector('.ki-liste'), eingabe: p.querySelector('textarea'), senden: p.querySelector('.ki-senden'), stopp: p.querySelector('.ki-stopp'), modell: p.querySelector('.ki-titel small') };
+    el = { knopf: knopf, panel: p, liste: p.querySelector('.ki-liste'), eingabe: p.querySelector('textarea'), anhaenge: p.querySelector('.ki-anhaenge'), senden: p.querySelector('.ki-senden'), stopp: p.querySelector('.ki-stopp'), modell: p.querySelector('.ki-titel small') };
     knopf.addEventListener('click', function () { umschalten(); });
     p.querySelector('[data-ki-zu]').addEventListener('click', function () { umschalten(false); });
     p.querySelector('[data-ki-neu]').addEventListener('click', function () {
@@ -496,9 +558,28 @@
     p.querySelector('form').addEventListener('submit', function (e) {
       e.preventDefault();
       const t = el.eingabe.value;
-      if (!t.trim() || laeuft) return;
+      if ((!t.trim() && !anhaenge.length) || laeuft) return;
+      const bilder = anhaenge;
+      anhaenge = []; anhaengeZeichnen();
       el.eingabe.value = ''; hoehe();
-      senden(t);
+      senden(t, bilder);
+    });
+    const datei = p.querySelector('[data-ki-datei]');
+    p.querySelector('[data-ki-bild]').addEventListener('click', function () { datei.click(); });
+    datei.addEventListener('change', function () { bilderDazu(datei.files); datei.value = ''; });
+    el.anhaenge.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-ki-anhang-weg]');
+      if (b) { anhaenge.splice(Number(b.getAttribute('data-ki-anhang-weg')), 1); anhaengeZeichnen(); }
+    });
+    // Screenshot einfügen (Strg+V / Cmd+V) oder ins Fenster ziehen
+    el.eingabe.addEventListener('paste', function (e) {
+      const d = e.clipboardData && e.clipboardData.files;
+      if (d && Array.prototype.some.call(d, function (x) { return /^image\//.test(x.type); })) { e.preventDefault(); bilderDazu(d); }
+    });
+    p.addEventListener('dragover', function (e) { if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) e.preventDefault(); });
+    p.addEventListener('drop', function (e) {
+      if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+      e.preventDefault(); bilderDazu(e.dataTransfer.files);
     });
     el.stopp.addEventListener('click', function () { if (abbrechen) abbrechen.abort(); });
     el.eingabe.addEventListener('keydown', function (e) {
@@ -632,7 +713,18 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-vorschlaege button{border:1px solid var(--kante);background:rgba(255,255,255,.6);color:var(--text);border-radius:14px;padding:10px 12px;font-size:13.5px;text-align:left;cursor:pointer}
 :root[data-thema="dunkel"] .ki-vorschlaege button{background:rgba(255,255,255,.06)}
 .ki-vorschlaege button:hover{border-color:var(--accent)}
-.ki-form{display:flex;align-items:flex-end;gap:8px;margin:6px 12px 0;padding:6px 6px 6px 14px;border-radius:22px;border:1px solid var(--kante);background:rgba(255,255,255,.8)}
+.ki-bilder{align-self:flex-end;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:88%}
+.ki-bilder img{width:96px;height:96px;object-fit:cover;border-radius:14px;border:1px solid var(--kante);display:block}
+.ki-anhaenge{display:flex;gap:8px;margin:6px 12px 0;overflow-x:auto;padding-top:6px}
+.ki-anhaenge[hidden]{display:none}
+.ki-anhang{position:relative;width:60px;height:60px;flex:0 0 60px}
+.ki-anhang img{width:100%;height:100%;object-fit:cover;border-radius:12px;border:1px solid var(--kante);display:block}
+.ki-anhang button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:2px solid var(--bg,#fff);background:#55555E;color:#fff;padding:3px;cursor:pointer}
+.ki-anhang button svg{width:100%;height:100%;display:block}
+.ki-bildknopf{width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:0;background:transparent;color:var(--muted);padding:7px;cursor:pointer}
+.ki-bildknopf:hover{background:rgba(127,127,140,.14);color:var(--text)}
+.ki-bildknopf svg{width:100%;height:100%;display:block}
+.ki-form{display:flex;align-items:flex-end;gap:6px;margin:6px 12px 0;padding:6px;border-radius:22px;border:1px solid var(--kante);background:rgba(255,255,255,.8)}
 :root[data-thema="dunkel"] .ki-form{background:rgba(255,255,255,.07)}
 .ki-form textarea{flex:1;border:0;outline:none;resize:none;background:transparent;color:var(--text);font:inherit;font-size:16px;line-height:1.4;padding:7px 0;max-height:140px}
 .ki-senden,.ki-stopp{width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:0;color:#fff;background:linear-gradient(180deg,#3E94FF,#0A7AFF);padding:8px;cursor:pointer}
