@@ -1218,9 +1218,10 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 14;
+  const VERSION = 15;
   const NEUIGKEITEN = [
-    ['📸', 'Bilder im KI-Assistenten', 'Schick einen Screenshot oder ein Foto deiner Aufgabe – der Assistent liest es und trägt die Aufgabe ins richtige Modul ein. Tippe dazu auf das Bild-Symbol im Chat.']
+    ['➡️', 'Lasso über Seiten hinweg', 'Ausgewähltes einfach auf die nächste Seite ziehen. Am Bildschirmrand scrollt es automatisch weiter.'],
+    ['✌️', 'Fingertipps abschaltbar', 'Rückgängig mit zwei und Wiederholen mit drei Fingern lassen sich im Notizbuch unter ⋯ → Einstellungen ausschalten.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

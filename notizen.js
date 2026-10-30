@@ -74,7 +74,7 @@
     formArt: 'auto', formFuellen: false, formDeckkraft: 0.25,
     laserArt: 'spur',
     textGroesse: 14, textFett: false,
-    finger: false, kritzeln: true, kritzelAlles: true, umkreisen: true, formen: true, format: 'a4', ausrichten: true, horizontal: false,
+    finger: false, fingerTipps: true, kritzeln: true, kritzelAlles: true, umkreisen: true, formen: true, format: 'a4', ausrichten: true, horizontal: false,
     vorlage: 'liniert', papier: 'weiss',
     leiste: { lasso: true, stift: true, radierer: true, text: true, bild: true, formen: true, zettel: true, laser: true, audio: true }
   };
@@ -1262,7 +1262,8 @@
       seitenTransform(ctx, a.i);
       if (E.ziehen) {                       // verschobene Elemente als Vorschau
         ctx.save();
-        ctx.beginPath(); ctx.rect(0, 0, seite.b, seite.h); ctx.clip();
+        const zj = zielSeite(a, z.dx, z.dy, z.k), zs = E.seiten[zj];
+        ctx.beginPath(); ctx.rect(E.pos[zj].x - E.pos[a.i].x, E.pos[zj].y - E.pos[a.i].y, zs.b, zs.h); ctx.clip();
         ctx.translate(a.bb.x0 + z.dx, a.bb.y0 + z.dy); ctx.scale(z.k, z.k); ctx.translate(-a.bb.x0, -a.bb.y0);
         seite.bilder.forEach(function (bi) {
           if (!a.b.has(bi.id)) return;
@@ -1327,6 +1328,8 @@
         E.weg.add(a.seite.id); E.dirty.delete(a.seite.id); seiteWegMarke(a.seite.id);
       }
       layout(); kameraBegrenzen(); buchSchmutzig();
+    } else if (a.typ === 'gruppe') {
+      (rueck ? a.teile.slice().reverse() : a.teile).forEach(function (t) { anwenden(t, rueck); });
     } else if (a.typ === 'seite-ordnung') {
       seitenOrdnen(rueck ? a.vorher : a.nachher);
     } else if (a.typ === 'seite-meta') {
@@ -1527,8 +1530,8 @@
     }
     const tap = E.tap; E.tap = null;
     if (tap && !tap.bewegt && performance.now() - tap.t0 < 380) {
-      if (tap.max === 2) { rueckgaengig(); toast('Rückgängig (Zwei-Finger-Tipp)'); }
-      else if (tap.max === 3) { wiederholen(); toast('Wiederholt (Drei-Finger-Tipp)'); }
+      if (tap.max === 2) { if (W.fingerTipps !== false) { rueckgaengig(); toast('Rückgängig (Zwei-Finger-Tipp)'); } }
+      else if (tap.max === 3) { if (W.fingerTipps !== false) { wiederholen(); toast('Wiederholt (Drei-Finger-Tipp)'); } }
       else if (tap.max === 1) fingerTipp(tap.pt);
       return;
     }
@@ -2269,9 +2272,41 @@
     if (by) { dy += by.k; E.hilfslinien.push({ y: by.z }); }
     return { dx: dx, dy: dy };
   }
+  /* Seite, auf der die Auswahl nach dem Verschieben landet (Mittelpunkt entscheidet) */
+  function zielSeite(a, dx, dy, k) {
+    const r = E.pos[a.i];
+    const cx = r.x + a.bb.x0 + dx + (a.bb.x1 - a.bb.x0) * k / 2, cy = r.y + a.bb.y0 + dy + (a.bb.y1 - a.bb.y0) * k / 2;
+    const j = seiteBei(cx, cy);
+    return j < 0 ? a.i : j;
+  }
+  /* Beim Ziehen an den Bildschirmrand weiterscrollen – so erreicht man die nächste Seite */
+  function randScrollen() {
+    const z = E.ziehen;
+    if (!z || z.art !== 'verschieben' || !z.pt || z.rand) return;
+    const rand = 56, p = z.pt;
+    let vx = 0, vy = 0;
+    if (E.horiz) { if (p.x < rand) vx = 1; else if (p.x > E.vw - rand) vx = -1; }
+    else if (p.y < rand) vy = 1; else if (p.y > E.vh - rand) vy = -1;
+    if (!vx && !vy) return;
+    z.rand = true;
+    requestAnimationFrame(function () {
+      if (!E || E.ziehen !== z) return;
+      z.rand = false;
+      verschieben(vx * 14, vy * 14);
+      ziehenMove(z.pt);
+    });
+  }
   function ziehenMove(pt) {
     const z = E.ziehen, s = skala();
-    if (z.art === 'verschieben') { const q = ausrichten(E.auswahl, (pt.x - z.start.x) / s, (pt.y - z.start.y) / s); z.dx = q.dx; z.dy = q.dy; }
+    if (z.art === 'verschieben') {
+      z.pt = pt;
+      if (!z.cam0) z.cam0 = { x: E.cam.x, y: E.cam.y };
+      let dx = (pt.x - z.start.x) / s + (E.cam.x - z.cam0.x), dy = (pt.y - z.start.y) / s + (E.cam.y - z.cam0.y);
+      if (zielSeite(E.auswahl, dx, dy, 1) === E.auswahl.i) { const q = ausrichten(E.auswahl, dx, dy); dx = q.dx; dy = q.dy; }
+      else E.hilfslinien = [];                                   // über einer anderen Seite: keine Hilfslinien
+      z.dx = dx; z.dy = dy;
+      randScrollen();
+    }
     else {
       const q = auswahlBildschirm();
       const basis = (q.x1 - q.x0) + (q.y1 - q.y0);
@@ -2282,8 +2317,42 @@
   function ziehenEnde() {
     const z = E.ziehen;
     E.ziehen = null; E.versteckt = null; E.hilfslinien = [];
-    if (Math.abs(z.dx) > 0.3 || Math.abs(z.dy) > 0.3 || Math.abs(z.k - 1) > 0.005) auswahlTransformieren(z.dx, z.dy, z.k);
+    if (Math.abs(z.dx) > 0.3 || Math.abs(z.dy) > 0.3 || Math.abs(z.k - 1) > 0.005) {
+      const start = E.undo.length, j = zielSeite(E.auswahl, z.dx, z.dy, z.k);
+      auswahlTransformieren(z.dx, z.dy, z.k);
+      if (j !== E.auswahl.i) { auswahlAufSeite(j); gruppieren(start); toast('Auf Seite ' + (j + 1) + ' verschoben'); }
+    }
     planeAlles();
+  }
+  /* mehrere Schritte (z. B. von Seite A weg, auf Seite B dazu) als ein Rückgängig-Schritt */
+  function gruppieren(start) {
+    const teile = E.undo.splice(start);
+    if (teile.length > 1) aktionMerken({ typ: 'gruppe', teile: teile });
+    else if (teile.length) E.undo.push(teile[0]);
+  }
+  /* Ausgewählte Objekte auf eine andere Seite übertragen (Lage auf dem Bildschirm bleibt gleich) */
+  function auswahlAufSeite(j) {
+    const a = E.auswahl, von = E.seiten[a.i], nach = E.seiten[j];
+    const ox = E.pos[a.i].x - E.pos[j].x, oy = E.pos[a.i].y - E.pos[j].y;
+    const st = von.striche.filter(function (x) { return a.s.has(x.id); });
+    const te = von.texte.filter(function (x) { return a.t.has(x.id); });
+    const bi = von.bilder.filter(function (x) { return a.b.has(x.id); });
+    aendern(von, function () {
+      if (st.length) von.striche = von.striche.filter(function (x) { return !a.s.has(x.id); });
+      if (te.length) von.texte = von.texte.filter(function (x) { return !a.t.has(x.id); });
+      if (bi.length) von.bilder = von.bilder.filter(function (x) { return !a.b.has(x.id); });
+    });
+    aendern(nach, function () {
+      if (st.length) nach.striche = nach.striche.concat(st.map(function (x) {
+        const q = x.p.slice();
+        for (let i = 0; i < q.length; i += 3) { q[i] = r2(q[i] + ox); q[i + 1] = r2(q[i + 1] + oy); }
+        return Object.assign({}, x, { p: q });
+      }));
+      if (te.length) nach.texte = nach.texte.concat(te.map(function (x) { return Object.assign({}, x, { x: r2(x.x + ox), y: r2(x.y + oy) }); }));
+      if (bi.length) nach.bilder = nach.bilder.concat(bi.map(function (x) { return Object.assign({}, x, { x: r2(x.x + ox), y: r2(x.y + oy) }); }));
+    });
+    a.i = j;
+    a.bb = { x0: a.bb.x0 + ox, y0: a.bb.y0 + oy, x1: a.bb.x1 + ox, y1: a.bb.y1 + oy };
   }
   function auswahlTransformieren(dx, dy, k) {
     const a = E.auswahl, seite = E.seiten[a.i], ax = a.bb.x0, ay = a.bb.y0;
@@ -3269,6 +3338,7 @@
       umschalterHTML('ausrichten', W.ausrichten !== false, 'Objekte ausrichten', 'Hilfslinien beim Verschieben') +
       umschalterHTML('horizontal', !!W.horizontal, 'Seitenweise blättern (horizontal)') +
       umschalterHTML('finger', W.finger, 'Mit Finger schreiben') +
+      umschalterHTML('fingerTipps', W.fingerTipps !== false, 'Fingertipps für Rückgängig', 'Zwei Finger tippen = rückgängig, drei = wiederholen') +
       m('leiste', 'Werkzeugleiste anpassen', 'filter'),
       function (p) {
         p.addEventListener('click', function (e) {
@@ -3307,6 +3377,7 @@
           const u = e.target.getAttribute('data-u');
           if (!u) return;
           W[u] = e.target.checked; werkzeugSpeichern();
+          if (u === 'fingerTipps') toast(e.target.checked ? 'Zwei-/Drei-Finger-Tipp ist eingeschaltet' : 'Zwei-/Drei-Finger-Tipp ist ausgeschaltet');
           if (u === 'finger') toast(e.target.checked ? 'Finger schreibt – zwei Finger blättern und zoomen' : 'Nur Apple Pencil schreibt – Finger blättert');
           if (u === 'horizontal') { const k = aktuelleSeite(); layout(); groesseAnpassen(); zuSeite(k); }
         });
