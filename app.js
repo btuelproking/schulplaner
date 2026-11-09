@@ -641,7 +641,182 @@ function starteApp() {
       '</div>';
   }
 
+
+  /* ============================================================
+     Heute-Seite in vier Designs (wählbar beim ersten Start und in den Einstellungen)
+     ============================================================ */
+  const HEUTE_STILE = [
+    ['klassisch', 'Klassisch', 'Kennzahlen und Listen – so wie bisher'],
+    ['widgets', 'Widgets', 'Überblick in Zahlen: nächste Abgabe, Wochenring, Wichtiges'],
+    ['zeitleiste', 'Zeitleiste', 'Nach Zeit geordnet, Tage in der Woche antippen'],
+    ['fokus', 'Fokus', 'Eine Aufgabe nach der anderen – „Erledigt“ oder „Später“']
+  ];
+  function heuteStil() {
+    let s = null;
+    try { s = localStorage.getItem('schulplaner.heute.stil'); } catch (e) { }
+    return HEUTE_STILE.some(function (x) { return x[0] === s; }) ? s : null;
+  }
+  function heuteStilSetzen(s) { try { localStorage.setItem('schulplaner.heute.stil', s); } catch (e) { } }
+  let zeitTag = 0;                                  // Zeitleiste: gewählter Tag (0 = heute)
+  const fokusSpaeter = [];                          // Fokus: in dieser Sitzung zurückgestellte Aufgaben
+  let letzteFokusId = null;                         // neue Karte gleitet herein, dieselbe bleibt ruhig
+
+  function heuteKopf(titel) {
+    return '<div class="kopf"><div><h1>' + esc(titel) + '</h1><div class="unter">' + esc(langesDatum(heute)) + '</div></div>' +
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-neu="heute">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
+  }
+  function statusKnopf(t) {
+    return '<button class="status-knopf' + (istFertig(t) ? ' fertig' : t.status === 'In Bearbeitung' ? ' arbeit' : '') + '" data-status="' + esc(t.id) + '" aria-label="' + (istFertig(t) ? 'Wieder öffnen' : 'Erledigt') + '"></button>';
+  }
+  function modulPunkt(t) { return '<span class="mod-punkt" style="background:' + modulFarbe(t.modul_id) + '"></span>' + esc(modulName(t.modul_id)); }
+  function tageBis(iso) { return Math.round((vonISO(iso) - vonISO(heute)) / 86400000); }
+  function faelligChip(t) {
+    if (istFertig(t)) return '';
+    if (!t.deadline) return '<span class="h-chip grau">Ohne Datum</span>';
+    const n = tageBis(t.deadline);
+    if (n < 0) return '<span class="h-chip rot">Überfällig</span>';
+    if (n === 0) return '<span class="h-chip rot">Heute</span>';
+    if (n === 1) return '<span class="h-chip blau">Morgen</span>';
+    return '<span class="h-chip grau">' + (n < 7 ? WT_KURZ[(vonISO(t.deadline).getDay() + 6) % 7] : kurzesDatum(t.deadline).slice(0, 6)) + '</span>';
+  }
+
+  /* ---------- Widgets: Überblick in Zahlen ---------- */
+  function htmlHeuteWidgets() {
+    const alle = aufgaben(), offen = alle.filter(function (t) { return !istFertig(t); });
+    const naechste = sortiere(offen.filter(function (t) { return t.deadline && t.deadline >= heute; }))[0];
+    const bis = tageDazu(heute, 6);
+    const woche = alle.filter(function (t) { return t.deadline && t.deadline >= heute && t.deadline <= bis; });
+    const wFertig = woche.filter(istFertig).length, anteil = woche.length ? wFertig / woche.length : 0;
+    const heuteL = sortiere(alle.filter(function (t) { return t.deadline === heute; }));
+    const ueber = sortiere(offen.filter(function (t) { return istUeberfaellig(t, heute); }));
+    const wichtig = offen.filter(function (t) { return t.prioritaet === 'Hoch' && (!t.deadline || t.deadline <= tageDazu(heute, 14)); });
+    let h = '<div class="seite h-widgets">' + heuteKopf('Heute') + '<div class="w-raster">';
+    if (naechste) {
+      const n = tageBis(naechste.deadline);
+      h += '<div class="w h-glas w-abgabe" data-karte="' + esc(naechste.id) + '"><h3>Nächste Abgabe</h3><div class="t">' + esc(naechste.titel) + '</div>' +
+        '<div class="w-zeit">' + (n === 0 ? 'heute' : n === 1 ? 'morgen' : 'in ' + n + ' Tagen') + '</div><small>' + modulPunkt(naechste) + '</small></div>';
+    } else h += '<div class="w h-glas"><h3>Nächste Abgabe</h3><div class="w-gross gruen">–</div><div class="w-klein">Keine Abgabe geplant</div></div>';
+    h += '<div class="w h-glas w-mitte"><h3>Diese Woche</h3><div class="w-ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(127,127,150,.22)" stroke-width="4"/>' +
+      '<circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--done)" stroke-width="4" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="' + Math.round(100 - anteil * 100) + '"/></svg><b>' + Math.round(anteil * 100) + '%</b></div>' +
+      '<div class="w-klein">' + (woche.length ? wFertig + ' von ' + woche.length + ' erledigt' : 'Nichts fällig') + '</div></div>';
+    h += '<div class="w h-glas breit"><h3>Heute fällig</h3>' + (heuteL.length ? heuteL.slice(0, 6).map(function (t) {
+      return '<div class="w-zeile' + (istFertig(t) ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '">' + statusKnopf(t) + '<div><div class="h-titel">' + esc(t.titel) + '</div><div class="h-u">' + modulPunkt(t) + '</div></div>' + faelligChip(t) + '</div>';
+    }).join('') + (heuteL.length > 6 ? '<div class="h-u">+ ' + (heuteL.length - 6) + ' weitere</div>' : '') : '<div class="leer">Heute ist nichts fällig. Gut geplant.</div>') + '</div>';
+    h += '<div class="w h-glas"' + (ueber[0] ? ' data-karte="' + esc(ueber[0].id) + '"' : '') + '><h3>Überfällig</h3><div class="w-gross ' + (ueber.length ? 'rot' : 'gruen') + '">' + ueber.length + '</div><div class="w-klein">' + (ueber.length ? esc(ueber[0].titel) + (ueber.length > 1 ? ' und ' + (ueber.length - 1) + ' weitere' : '') : 'Alles im Plan') + '</div></div>';
+    h += '<div class="w h-glas"><h3>Wichtig</h3><div class="w-gross">' + wichtig.length + '</div><div class="w-klein">Hohe Priorität in den nächsten 14 Tagen</div></div>';
+    const buecher = window.Notizen && window.Notizen.zuletzt ? window.Notizen.zuletzt(3) : [];
+    if (buecher.length) h += '<div class="w h-glas breit"><h3>Zuletzt geöffnet</h3><div class="w-buecher">' + buecher.map(function (b) {
+      return '<button class="w-buch" data-nb-oeffnen="' + esc(b.id) + '" style="background:linear-gradient(150deg,' + farbeSicher(b.c1) + ',' + farbeSicher(b.c2) + ')"><span>' + esc(b.titel) + '</span></button>';
+    }).join('') + '</div></div>';
+    return h + '</div></div>';
+  }
+
+  /* ---------- Zeitleiste: nach Zeit geordnet ---------- */
+  function zeitKarte(t, i) {
+    return '<div class="z-karte h-glas' + (istFertig(t) ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '" style="--m:' + modulFarbe(t.modul_id) + ';animation-delay:' + Math.min(i, 8) * 40 + 'ms">' +
+      statusKnopf(t) + '<div class="z-text"><div class="h-titel">' + esc(t.titel) + '</div><div class="h-u">' + modulPunkt(t) +
+      ((t.unteraufgaben || []).length ? ' · ' + t.unteraufgaben.filter(function (s) { return s.erledigt; }).length + '/' + t.unteraufgaben.length + ' Schritte' : '') + '</div></div>' + faelligChip(t) + '</div>';
+  }
+  function htmlHeuteZeitleiste() {
+    const alle = aufgaben(), offen = alle.filter(function (t) { return !istFertig(t); });
+    const tag = tageDazu(heute, zeitTag), stunde = new Date().getHours();
+    const gruss = stunde < 11 ? 'Guten Morgen' : stunde < 17 ? 'Hallo' : 'Guten Abend';
+    let h = '<div class="seite h-zeit">' + heuteKopf(gruss) + '<div class="z-woche h-glas">';
+    for (let i = 0; i < 7; i++) {
+      const d = tageDazu(heute, i), dd = vonISO(d);
+      const hat = offen.some(function (t) { return t.deadline === d; });
+      h += '<button class="z-tag' + (i === zeitTag ? ' aktiv' : '') + '" data-zeit-tag="' + i + '">' + WT_KURZ[(dd.getDay() + 6) % 7] + '<b>' + dd.getDate() + '</b>' + (hat ? '<i></i>' : '') + '</button>';
+    }
+    h += '</div>';
+    const ueber = sortiere(offen.filter(function (t) { return istUeberfaellig(t, heute); }));
+    const amTag = sortiere(alle.filter(function (t) { return t.deadline === tag; }));
+    const danach = sortiere(offen.filter(function (t) { return t.deadline && t.deadline > tag; }));
+    const ohne = sortiere(offen.filter(function (t) { return !t.deadline; }));
+    const start = ueber.concat(amTag.filter(function (t) { return !istFertig(t); }))[0];
+    if (zeitTag === 0 && start) h += '<div class="z-fokus h-glas" data-karte="' + esc(start.id) + '"><div class="k">Fang hiermit an</div><p>' + esc(start.titel) + '</p></div>';
+    const gruppe = function (titel, zahl, liste, leer) {
+      return '<div class="z-gruppe"><h2>' + esc(titel) + ' <span>' + zahl + '</span></h2><div class="z-liste">' +
+        (liste.length ? liste.map(zeitKarte).join('') : '<div class="leer">' + leer + '</div>') + '</div></div>';
+    };
+    if (zeitTag === 0 && ueber.length) h += gruppe('Überfällig', ueber.length, ueber, '');
+    h += gruppe(zeitTag === 0 ? 'Heute' : langesDatum(tag).replace(/ \d{4}$/, ''), amTag.filter(function (t) { return !istFertig(t); }).length + ' offen', amTag,
+      zeitTag === 0 && geradeErledigt && geradeErledigt.heute ? '🎉 Alles für heute erledigt!' : 'Nichts fällig an diesem Tag.');
+    if (danach.length) h += gruppe('Danach', danach.length, danach.slice(0, 12), '');
+    if (ohne.length) h += gruppe('Ohne Datum', ohne.length, ohne, '');
+    return h + '</div>';
+  }
+
+  /* ---------- Fokus: eine Aufgabe nach der anderen ---------- */
+  function fokusReihe() {
+    const offen = sortiere(aufgaben().filter(function (t) { return !istFertig(t); }));
+    const rang = function (t) { return !t.deadline ? 3 : t.deadline < heute ? 0 : t.deadline === heute ? 1 : 2; };
+    offen.sort(function (a, b) {
+      const sa = fokusSpaeter.indexOf(a.id), sb = fokusSpaeter.indexOf(b.id);
+      if ((sa >= 0) !== (sb >= 0)) return sa >= 0 ? 1 : -1;
+      if (sa >= 0) return sa - sb;
+      return rang(a) - rang(b);
+    });
+    return offen;
+  }
+  function htmlHeuteFokus() {
+    const reihe = fokusReihe(), t = reihe[0];
+    const bereich = aufgaben().filter(function (x) { return x.deadline && (x.deadline < heute ? !istFertig(x) : x.deadline === heute); });
+    const fertig = bereich.filter(istFertig).length;
+    let h = '<div class="seite h-fokus">' + heuteKopf('Heute');
+    if (bereich.length) h += '<div class="f-fortschritt"><div class="f-balken"><i style="transform:scaleX(' + (fertig / bereich.length) + ')"></i></div>' + fertig + ' von ' + bereich.length + ' für heute</div>';
+    if (!t) return h + '<div class="f-fertig h-glas"><span>🎉</span><h2>Alles erledigt!</h2><p>Keine offenen Aufgaben – genieß die freie Zeit.</p></div></div>';
+    const label = !t.deadline ? 'Als Nächstes · ohne Datum' : t.deadline < heute ? 'Überfällig – zuerst das' : t.deadline === heute ? 'Als Nächstes · heute fällig' : 'Als Nächstes · ' + menschDatum(t.deadline);
+    const neueKarte = t.id !== letzteFokusId; letzteFokusId = t.id;
+    h += '<div class="f-karte h-glas' + (neueKarte ? ' rein' : '') + '" data-fokus="' + esc(t.id) + '"><div class="f-label">' + esc(label) + '</div>' +
+      '<h2 data-karte="' + esc(t.id) + '">' + esc(t.titel) + '</h2><div class="f-meta"><span>' + modulPunkt(t) + '</span>' + faelligChip(t) +
+      (t.prioritaet === 'Hoch' ? '<span class="h-chip rot">Hoch</span>' : '') + '</div>';
+    if ((t.unteraufgaben || []).length) h += '<div class="f-unter">' + t.unteraufgaben.map(function (s, i) {
+      return '<div class="sub' + (s.erledigt ? ' ok' : '') + '" data-sub-karte="' + esc(t.id) + '|' + i + '"><span class="sub-kreis"></span><span>' + esc(s.titel) + '</span></div>';
+    }).join('') + '</div>';
+    if (t.notizen) h += '<p class="f-notiz">' + esc(String(t.notizen).slice(0, 220)) + '</p>';
+    h += '<div class="f-knoepfe"><button class="btn" data-fokus-spaeter="' + esc(t.id) + '">Später</button>' +
+      '<button class="btn btn-primary" data-status="' + esc(t.id) + '">Erledigt</button></div></div>';
+    if (reihe.length > 1) h += '<details class="f-danach"><summary>Danach noch ' + (reihe.length - 1) + '</summary>' + reihe.slice(1).map(function (x) {
+      return '<div class="f-mini h-glas" data-karte="' + esc(x.id) + '"><span class="mod-punkt" style="background:' + modulFarbe(x.modul_id) + '"></span><span class="h-titel">' + esc(x.titel) + '</span>' + faelligChip(x) + '</div>';
+    }).join('') + '</details>';
+    return h + '</div>';
+  }
+
+  /* ---------- Auswahl beim ersten Start und in den Einstellungen ---------- */
+  function stilVorschau(id) {
+    if (id === 'widgets') return '<i class="v-w"></i><i class="v-w"></i><i class="v-b"></i><i class="v-w"></i><i class="v-w"></i>';
+    if (id === 'zeitleiste') return '<i class="v-streifen"></i><i class="v-z"></i><i class="v-z"></i><i class="v-z"></i>';
+    if (id === 'fokus') return '<i class="v-f"></i><i class="v-l"></i>';
+    return '<i class="v-k"></i><i class="v-k"></i><i class="v-l"></i><i class="v-l"></i><i class="v-l"></i>';
+  }
+  function stilWahlHTML(aktuell) {
+    return '<div class="stil-wahl">' + HEUTE_STILE.map(function (s) {
+      return '<button class="stil-option' + (s[0] === aktuell ? ' aktiv' : '') + '" data-heute-stil="' + s[0] + '"><span class="stil-bild stil-' + s[0] + '">' + stilVorschau(s[0]) + '</span>' +
+        '<b>' + esc(s[1]) + '</b><small>' + esc(s[2]) + '</small></button>';
+    }).join('') + '</div>';
+  }
+  function designWahlZeigen() {
+    let dlg = document.getElementById('dlgStil');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'dlgStil'; dlg.className = 'neu-dlg stil-dlg';
+      document.body.appendChild(dlg);
+      dlg.addEventListener('cancel', function (e) { e.preventDefault(); });   // erst wählen
+    }
+    dlg.innerHTML = '<div class="dlg-koerper"><h2>Wie soll deine Heute-Seite aussehen?</h2>' +
+      '<div class="neu-unter">Du kannst das später jederzeit in den Einstellungen ändern.</div>' + stilWahlHTML(heuteStil() || 'klassisch') + '</div>';
+    if (!dlg.open) dlg.showModal();
+  }
+  function designWahlPruefen() {
+    if (heuteStil() || document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return;
+    designWahlZeigen();
+  }
+
   function htmlHeute() {
+    const stil = heuteStil();
+    if (stil === 'widgets') return htmlHeuteWidgets();
+    if (stil === 'zeitleiste') return htmlHeuteZeitleiste();
+    if (stil === 'fokus') return htmlHeuteFokus();
     const offen = aufgaben().filter(function (t) { return !istFertig(t); });
     const ueber = sortiere(offen.filter(function (t) { return istUeberfaellig(t, heute); }));
     const heuteListe = sortiere(offen.filter(function (t) { return t.deadline === heute; }));
@@ -862,6 +1037,8 @@ function starteApp() {
 
     if (window.Notizen) h += '<div data-nb-einstellungen="1"></div>';
     if (window.Assistent) h += '<div data-ki-einstellungen="1"></div>';
+
+    h += '<div class="box"><h3>Heute-Ansicht</h3><p>Wähle, wie deine Heute-Seite aussieht.</p>' + stilWahlHTML(heuteStil() || 'klassisch') + '</div>';
 
     h += '<div class="box"><h3>Version</h3><p>SchulPlaner Version ' + VERSION + '.</p>' +
       '<button class="btn" data-neuigkeiten="1">Was ist neu?</button></div>';
@@ -1113,6 +1290,18 @@ function starteApp() {
         unteraufgabeUmschalten(teile[0], Number(teile[1]));
         return;
       }
+      if ((el = ziel('data-heute-stil'))) {
+        heuteStilSetzen(el.getAttribute('data-heute-stil'));
+        const d = document.getElementById('dlgStil');
+        if (d && d.open) d.close();
+        render(); return;
+      }
+      if ((el = ziel('data-zeit-tag'))) { zeitTag = Number(el.getAttribute('data-zeit-tag')) || 0; render(); return; }
+      if ((el = ziel('data-fokus-spaeter'))) {
+        const id = el.getAttribute('data-fokus-spaeter'), i = fokusSpaeter.indexOf(id);
+        if (i >= 0) fokusSpaeter.splice(i, 1);
+        fokusSpaeter.push(id); render(); return;
+      }
       if ((el = ziel('data-karte'))) { oeffneAufgabe(el.getAttribute('data-karte')); return; }
       if ((el = ziel('data-ansicht'))) { zeige(el.getAttribute('data-ansicht')); return; }
       if ((el = ziel('data-neu'))) {
@@ -1286,11 +1475,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 21;
+  const VERSION = 22;
   const NEUIGKEITEN = [
-    ['🫧', 'Liquid Glass', 'Am iPhone schwebt die Tab-Leiste jetzt als Glaskapsel, der +-Knopf sitzt daneben. Glas hat Lichtkanten wie bei iOS.'],
-    ['↕️', 'Mehr Platz beim Scrollen', 'Scrollst du nach unten, wird die Leiste kleiner – beim Hochscrollen kommt sie zurück.'],
-    ['🌈', 'Lebendiger Hintergrund', 'Auch im hellen Modus wandern die Farben hinter dem Glas jetzt ganz langsam.']
+    ['🎨', 'Wähle deine Heute-Seite', 'Neu: Widgets, Zeitleiste oder Fokus – oder weiter Klassisch. Gleich nach diesem Fenster kannst du wählen, später jederzeit unter Einstellungen → Heute-Ansicht.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
@@ -1312,7 +1499,7 @@ function starteApp() {
       dlg.className = 'neu-dlg';
       document.body.appendChild(dlg);
       dlg.addEventListener('click', function (e) {
-        if (e.target === dlg || e.target.closest('[data-neu-ok]')) dlg.close();
+        if (e.target === dlg || e.target.closest('[data-neu-ok]')) { dlg.close(); setTimeout(designWahlPruefen, 250); }
       });
     }
     dlg.innerHTML = '<div class="dlg-koerper"><h2>Neu im SchulPlaner</h2>' +
@@ -1332,6 +1519,7 @@ function starteApp() {
     try { localStorage.setItem('schulplaner.version', String(VERSION)); } catch (e) { }
     if (document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return;
     neuigkeitenZeigen();
+    return true;
   }
 
   render();
@@ -1346,7 +1534,7 @@ function starteApp() {
       letzt = y;
     }, { passive: true });
   })();
-  setTimeout(neuigkeitenPruefen, 700);
+  setTimeout(function () { if (!neuigkeitenPruefen()) designWahlPruefen(); }, 700);
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();
   setInterval(function () { tageswechselPruefen(); themaNachpruefen(); }, 20000);

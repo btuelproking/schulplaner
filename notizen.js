@@ -6031,6 +6031,10 @@ dialog.nb-galerie-dlg .nb-ki-karte{width:100%;height:100%;max-height:none}
     neu: function (modul) { dialogOeffnen(null, modul || null); },
     suchen: suchen,
     oeffnen: oeffnen,
+    // für die Heute-Seite: zuletzt bearbeitete Notizbücher (nur Anzeige-Daten)
+    zuletzt: function (n) {
+      return sortiert(buecher).slice(0, n || 3).map(function (b) { const c = COVER[b.cover] || COVER[0]; return { id: b.id, titel: b.titel, c1: c[0], c2: c[1] }; });
+    },
     offen: function () { return !!E; },
     // für Tests
     _intern: {
