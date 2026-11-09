@@ -644,6 +644,234 @@ function starteApp() {
 
 
   /* ============================================================
+     Moodle-Abgleich über die Kalenderdatei (.ics) von elearning
+     Nur lesen: in Moodle wird nichts gestartet oder abgegeben.
+     Der Kalender-Link ist wie ein Schlüssel und bleibt nur auf diesem Gerät.
+     ============================================================ */
+  const MOODLE_KEY = 'schulplaner.moodle';
+  const MOODLE_STANDARD = 'https://elearning.tgm.ac.at';
+  function moodleCfg() { try { const c = JSON.parse(localStorage.getItem(MOODLE_KEY) || '{}'); return c && typeof c === 'object' ? c : {}; } catch (e) { return {}; } }
+  function moodleCfgSetzen(c) { try { localStorage.setItem(MOODLE_KEY, JSON.stringify(c)); } catch (e) { } }
+  function moodleBasis() {
+    const u = moodleCfg().url;
+    try { if (u) return new URL(u).origin; } catch (e) { }
+    return MOODLE_STANDARD;
+  }
+  function moodleLinkGueltig(u) {
+    try { const x = new URL(u); return x.protocol === 'https:' && /export_execute\.php/.test(x.pathname) && x.searchParams.get('authtoken'); } catch (e) { return false; }
+  }
+
+  /* --- Kalenderdatei lesen (RFC 5545, so wie Moodle sie schreibt) --- */
+  function icsLesen(text) {
+    const zeilen = String(text).replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').split(/\r?\n/);
+    const ereignisse = []; let e = null;
+    const wert = function (v) { return v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim(); };
+    zeilen.forEach(function (z) {
+      if (z === 'BEGIN:VEVENT') { e = {}; return; }
+      if (z === 'END:VEVENT') { if (e) ereignisse.push(e); e = null; return; }
+      if (!e) return;
+      const i = z.indexOf(':'); if (i < 0) return;
+      const kopf = z.slice(0, i), name = kopf.split(';')[0].toUpperCase(), v = z.slice(i + 1);
+      if (name === 'UID') e.uid = v.trim();
+      else if (name === 'SUMMARY') e.titel = wert(v);
+      else if (name === 'DESCRIPTION') e.text = wert(v);
+      else if (name === 'CATEGORIES') e.kurs = wert(v).split(',')[0].trim();
+      else if (name === 'DTSTART' || (name === 'DTEND' && !e.start)) e[name === 'DTSTART' ? 'start' : 'ende'] = v.trim();
+    });
+    return ereignisse;
+  }
+  function icsDatum(v) {                          // 20261112T225900Z -> lokales Datum (Abgabe 23:59 bleibt am richtigen Tag)
+    const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/.exec(v || '');
+    if (!m) return null;
+    if (!m[4]) return m[1] + '-' + m[2] + '-' + m[3];
+    const d = m[7] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    return datumISO(d);
+  }
+  function moodleTitel(t) {                       // „Hausübung 3 ist fällig“ -> „Hausübung 3“
+    return String(t || '').replace(/^["„'‚]|["“'‘]$/g, '')
+      .replace(/\s+(ist fällig|ist zu erledigen|ist bis|ist abzugeben|endet|schließt|is due|closes|due)\.?$/i, '').trim();
+  }
+  function moodleNormal(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').trim(); }
+
+  /* --- Vergleich mit den vorhandenen Aufgaben: nie doppelt eintragen --- */
+  function moodlePlan(ereignisse) {
+    const grenze = tageDazu(heute, -7), alle = daten.aufgaben.filter(function (t) { return !t.geloescht; });
+    const plan = { neu: [], geaendert: [], vorhanden: [], uebersprungen: 0, kurse: {} };
+    const gesehen = new Set();
+    ereignisse.forEach(function (e) {
+      if (!e.uid || !e.titel || /\s(öffnet|opens|beginnt)\.?$/i.test(e.titel)) { plan.uebersprungen++; return; }
+      const deadline = icsDatum(e.start || e.ende);
+      if (!deadline || deadline < grenze || gesehen.has(e.uid)) { plan.uebersprungen++; return; }
+      gesehen.add(e.uid);
+      const titel = moodleTitel(e.titel) || e.titel, kurs = e.kurs || 'Ohne Kurs';
+      plan.kurse[kurs] = (plan.kurse[kurs] || 0) + 1;
+      const eintrag = { uid: e.uid, titel: titel, deadline: deadline, kurs: kurs, text: (e.text || '').slice(0, 400) };
+      let t = alle.find(function (x) { return x.moodle_uid === e.uid; });
+      if (!t) t = alle.find(function (x) { return !x.moodle_uid && moodleNormal(x.titel) === moodleNormal(titel) && (!x.deadline || x.deadline === deadline); });
+      if (!t) { plan.neu.push(eintrag); return; }
+      eintrag.id = t.id;
+      if (t.deadline !== deadline && !istFertig(t)) { eintrag.alt = t.deadline; plan.geaendert.push(eintrag); }
+      else plan.vorhanden.push(eintrag);
+    });
+    return plan;
+  }
+  function moodleUebernehmen(plan, auswahl) {
+    const zuordnung = moodleCfg().kurse || {};
+    const modulFuer = function (kurs) {
+      const z = zuordnung[kurs];
+      if (z && z !== '__neu__' && z !== '__ohne__' && modulVon(z)) return z;
+      if (z === '__neu__') {
+        const da = module().find(function (m) { return m.name.toLowerCase() === kurs.toLowerCase(); });
+        if (da) return da.id;
+        const m = { id: uid(), name: kurs.slice(0, 60), farbe: MODUL_FARBEN[module().length % MODUL_FARBEN.length], geaendert: jetztISO(), geloescht: false };
+        daten.module.push(m); zuordnung[kurs] = m.id;
+        const c = moodleCfg(); c.kurse = zuordnung; moodleCfgSetzen(c);
+        return m.id;
+      }
+      return null;
+    };
+    let neu = 0, geaendertZahl = 0;
+    plan.neu.forEach(function (e) {
+      if (!auswahl.has(e.uid) || zuordnung[e.kurs] === '__weg__') return;
+      daten.aufgaben.push({
+        id: uid(), titel: e.titel.slice(0, 200), modul_id: modulFuer(e.kurs), deadline: e.deadline,
+        status: 'Noch nicht angefangen', prioritaet: /test|schularbeit|prüfung|quiz|(^|[^a-zäöüß])(sa|smü|gkü|gkv|wh)([^a-zäöüß]|$)/i.test(e.titel) ? 'Hoch' : 'Mittel',
+        notizen: 'Aus Moodle (' + e.kurs + ')' + (e.text ? '\n' + e.text : ''), unteraufgaben: [], moodle_uid: e.uid,
+        geaendert: jetztISO(), geloescht: false
+      });
+      neu++;
+    });
+    plan.geaendert.forEach(function (e) {
+      if (!auswahl.has(e.uid)) return;
+      const t = aufgabeVon(e.id); if (!t) return;
+      t.deadline = e.deadline; t.moodle_uid = e.uid; t.geaendert = jetztISO(); geaendertZahl++;
+    });
+    plan.vorhanden.forEach(function (e) {           // eigene Einträge mit Moodle verknüpfen, damit sie künftig sicher erkannt werden
+      const t = aufgabeVon(e.id); if (t && !t.moodle_uid) { t.moodle_uid = e.uid; t.geaendert = jetztISO(); }
+    });
+    const c = moodleCfg(); c.zuletzt = jetztISO(); moodleCfgSetzen(c);
+    geaendert();
+    return { neu: neu, geaendert: geaendertZahl };
+  }
+
+  /* --- Fenster: verbinden, Datei holen, Kurse zuordnen, Vorschau --- */
+  let moodleZustand = null;
+  function moodleDialog() {
+    let dlg = document.getElementById('dlgMoodle');
+    if (!dlg) {
+      dlg = document.createElement('dialog'); dlg.id = 'dlgMoodle'; dlg.className = 'neu-dlg moodle-dlg';
+      document.body.appendChild(dlg);
+      dlg.addEventListener('click', moodleKlick);
+      dlg.addEventListener('change', function (e) {
+        if (e.target.matches('[data-moodle-datei]') && e.target.files[0]) moodleDateiLesen(e.target.files[0]);
+        if (e.target.matches('[data-moodle-kurs]')) { const c = moodleCfg(); c.kurse = c.kurse || {}; c.kurse[e.target.getAttribute('data-moodle-kurs')] = e.target.value; moodleCfgSetzen(c); }
+        if (e.target.matches('[data-moodle-wahl]')) { const u = e.target.getAttribute('data-moodle-wahl'); e.target.checked ? moodleZustand.auswahl.add(u) : moodleZustand.auswahl.delete(u); moodleZeichnen(); }
+      });
+      dlg.addEventListener('dragover', function (e) { e.preventDefault(); });
+      dlg.addEventListener('drop', function (e) { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) moodleDateiLesen(f); });
+    }
+    moodleZustand = { schritt: moodleCfg().url ? 'holen' : 'verbinden', plan: null, auswahl: new Set(), fehler: '' };
+    moodleZeichnen();
+    if (!dlg.open) dlg.showModal();
+  }
+  function moodleDateiLesen(datei) {
+    const r = new FileReader();
+    r.onload = function () {
+      const ereignisse = icsLesen(r.result);
+      if (!/BEGIN:VCALENDAR/.test(String(r.result))) { moodleZustand.fehler = 'Das ist keine Kalenderdatei (.ics). Bitte die Datei aus elearning wählen.'; moodleZeichnen(); return; }
+      moodleZustand.plan = moodlePlan(ereignisse);
+      moodleZustand.auswahl = new Set(moodleZustand.plan.neu.concat(moodleZustand.plan.geaendert).map(function (e) { return e.uid; }));
+      const zuordnung = moodleCfg().kurse || {};
+      const offen = Object.keys(moodleZustand.plan.kurse).filter(function (k) { return !zuordnung[k]; });
+      moodleZustand.schritt = offen.length ? 'kurse' : 'vorschau'; moodleZustand.fehler = '';
+      moodleZeichnen();
+    };
+    r.onerror = function () { moodleZustand.fehler = 'Die Datei konnte nicht gelesen werden.'; moodleZeichnen(); };
+    r.readAsText(datei);
+  }
+  /* typische Fach-Kürzel an HTLs (Kurzname in Moodle, z. B. „AM_2AHIT“) */
+  const MOODLE_KUERZEL = { am: ['mathe', 'mathematik'], d: ['deutsch'], e: ['englisch', 'english'], nwt: ['netzwerk'], sew: ['software', 'sew'],
+    nawi: ['naturwiss', 'physik', 'chemie', 'biologie', 'nawi'], nw: ['naturwiss', 'physik', 'chemie'], ggp: ['geschichte', 'politik'], ggpb: ['geschichte', 'politik'],
+    besp: ['sport', 'bewegung'], bsp: ['sport', 'bewegung'], rk: ['religion'], re: ['religion'], wir: ['wirtschaft', 'recht'], itp: ['projekt'], insy: ['informationssystem', 'datenbank'],
+    medt: ['medientechnik', 'medien'], syt: ['systemtechnik'], itsi: ['sicherheit'], kosy: ['kommunikation'], prmt: ['projektmanagement'] };
+  function moodleVorschlag(kurs) {                // Modul mit ähnlichem Namen oder passendem Kürzel vorschlagen
+    const k = moodleNormal(kurs), kuerzel = String(kurs).toLowerCase().split(/[_\s\-.]/)[0];
+    const woerter = (MOODLE_KUERZEL[kuerzel] || []).concat(k ? [k] : []);
+    const m = module().find(function (x) {
+      const n = moodleNormal(x.name);
+      return n && woerter.some(function (w) { return n.indexOf(w) >= 0 || (w.length > 2 && w.indexOf(n) >= 0); });
+    });
+    return m ? m.id : '__neu__';
+  }
+  function moodleZeichnen() {
+    const dlg = document.getElementById('dlgMoodle'), z = moodleZustand, c = moodleCfg();
+    let h = '<div class="dlg-koerper"><h2>Moodle-Abgleich</h2>';
+    if (z.fehler) h += '<div class="hinweis fehler">' + esc(z.fehler) + '</div>';
+    if (z.schritt === 'verbinden') {
+      h += '<div class="neu-unter">Einmal einrichten – danach reichen zwei Taps.</div><ol class="moodle-schritte">' +
+        '<li><button class="btn" data-moodle-oeffnen="export">elearning-Kalender öffnen</button></li>' +
+        '<li>Dort <b>„Alle Kurse“</b> und <b>„Kommende Ereignisse“</b> (oder „Letzte und kommende 60 Tage“) wählen, dann <b>„Kalender-URL abrufen“</b>.</li>' +
+        '<li>Den Link kopieren und hier einfügen:<input id="moodleLink" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/calendar/export_execute.php?…"></li></ol>' +
+        '<p class="moodle-klein">🔑 Der Link ist wie ein Schlüssel zu deinem Kalender: Wer ihn hat, sieht deine Termine (ändern oder abgeben kann man damit nichts). Er bleibt nur auf diesem Gerät – nicht weitergeben.</p>' +
+        '</div><div class="dlg-fuss"><button class="btn" data-moodle-schritt="datei">Nur Datei</button><div class="rechts"><button class="btn" data-moodle-zu>Abbrechen</button><button class="btn btn-primary" data-moodle-speichern>Speichern</button></div></div>';
+    } else if (z.schritt === 'holen' || z.schritt === 'datei') {
+      h += (z.schritt === 'holen' ? '<ol class="moodle-schritte"><li><button class="btn btn-primary" data-moodle-oeffnen="link">Kalender herunterladen</button><span class="moodle-klein">öffnet deinen gespeicherten Link – der Browser lädt die Datei herunter</span></li>' +
+        '<li>Zurück hierher und die Datei wählen:</li></ol>' : '<div class="neu-unter">In elearning unter Kalender → Exportieren die Datei herunterladen und hier wählen.</div>') +
+        '<label class="moodle-ablage"><input type="file" accept=".ics,text/calendar" data-moodle-datei hidden><b>Datei wählen</b><span>oder hierher ziehen (am Laptop)</span></label>' +
+        (c.zuletzt ? '<p class="moodle-klein">Zuletzt abgeglichen: ' + esc(menschDatum(c.zuletzt.slice(0, 10))) + '</p>' : '') +
+        '</div><div class="dlg-fuss">' + (c.url ? '<button class="btn" data-moodle-schritt="verbinden">Link ändern</button>' : '') + '<div class="rechts"><button class="btn" data-moodle-zu>Schließen</button></div></div>';
+    } else if (z.schritt === 'kurse') {
+      const zu = c.kurse || {};
+      h += '<div class="neu-unter">Einmalig: In welches Modul gehören die Aufgaben aus diesen Kursen?</div>' + Object.keys(z.plan.kurse).sort().map(function (k) {
+        const wert = zu[k] || moodleVorschlag(k);
+        if (!zu[k]) { const cc = moodleCfg(); cc.kurse = cc.kurse || {}; cc.kurse[k] = wert; moodleCfgSetzen(cc); }
+        return '<div class="moodle-kurs"><div><b>' + esc(k) + '</b><small>' + z.plan.kurse[k] + (z.plan.kurse[k] === 1 ? ' Eintrag' : ' Einträge') + '</small></div><select data-moodle-kurs="' + esc(k) + '">' +
+          module().map(function (m) { return '<option value="' + esc(m.id) + '"' + (wert === m.id ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') +
+          '<option value="__neu__"' + (wert === '__neu__' ? ' selected' : '') + '>➕ Neues Modul „' + esc(k.slice(0, 30)) + '“</option>' +
+          '<option value="__ohne__"' + (wert === '__ohne__' ? ' selected' : '') + '>Ohne Modul</option>' +
+          '<option value="__weg__"' + (wert === '__weg__' ? ' selected' : '') + '>Nicht übernehmen</option></select></div>';
+      }).join('') + '</div><div class="dlg-fuss"><div class="rechts"><button class="btn btn-primary" data-moodle-schritt="vorschau">Weiter</button></div></div>';
+    } else if (z.schritt === 'vorschau') {
+      const p = z.plan, zu = c.kurse || {};
+      const zeile = function (e, art) {
+        const weg = zu[e.kurs] === '__weg__';
+        return '<label class="moodle-zeile' + (weg ? ' weg' : '') + '"><input type="checkbox" data-moodle-wahl="' + esc(e.uid) + '"' + (z.auswahl.has(e.uid) && !weg ? ' checked' : '') + (weg ? ' disabled' : '') + '>' +
+          '<span><b>' + esc(e.titel) + '</b><small>' + esc(e.kurs) + ' · ' + esc(menschDatum(e.deadline)) + (art === 'geaendert' ? ' (vorher ' + esc(e.alt ? menschDatum(e.alt) : 'ohne Datum') + ')' : '') + '</small></span></label>';
+      };
+      const zahl = p.neu.concat(p.geaendert).filter(function (e) { return z.auswahl.has(e.uid) && zu[e.kurs] !== '__weg__'; }).length;
+      h += '<div class="moodle-zahlen"><span><b>' + p.neu.length + '</b> neu</span><span><b>' + p.geaendert.length + '</b> geändert</span><span><b>' + p.vorhanden.length + '</b> schon da</span></div>' +
+        (p.neu.length ? '<h3 class="moodle-h">Neu</h3>' + p.neu.map(function (e) { return zeile(e, 'neu'); }).join('') : '') +
+        (p.geaendert.length ? '<h3 class="moodle-h">Termin geändert</h3>' + p.geaendert.map(function (e) { return zeile(e, 'geaendert'); }).join('') : '') +
+        (!p.neu.length && !p.geaendert.length ? '<div class="leer">Alles schon eingetragen – nichts Neues in Moodle. 👍</div>' : '') +
+        '</div><div class="dlg-fuss"><button class="btn" data-moodle-schritt="kurse">Kurse</button><div class="rechts"><button class="btn" data-moodle-zu>Abbrechen</button>' +
+        (zahl ? '<button class="btn btn-primary" data-moodle-uebernehmen>' + zahl + ' übernehmen</button>' : '') + '</div></div>';
+    }
+    dlg.innerHTML = h;
+  }
+  function moodleKlick(e) {
+    const z = moodleZustand, dlg = document.getElementById('dlgMoodle');
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-moodle-zu')) { dlg.close(); return; }
+    if (b.hasAttribute('data-moodle-oeffnen')) {
+      const ziel = b.getAttribute('data-moodle-oeffnen') === 'link' ? moodleCfg().url : moodleBasis() + '/calendar/export.php';
+      if (ziel) window.open(ziel, '_blank', 'noopener');
+      return;
+    }
+    if (b.hasAttribute('data-moodle-speichern')) {
+      const v = (document.getElementById('moodleLink').value || '').trim();
+      if (!moodleLinkGueltig(v)) { z.fehler = 'Das sieht nicht wie der Kalender-Link aus. Er beginnt mit https:// und enthält „export_execute.php“ und „authtoken“.'; moodleZeichnen(); return; }
+      const c = moodleCfg(); c.url = v; moodleCfgSetzen(c);
+      z.schritt = 'holen'; z.fehler = ''; moodleZeichnen(); render(); return;
+    }
+    if (b.hasAttribute('data-moodle-schritt')) { z.schritt = b.getAttribute('data-moodle-schritt'); z.fehler = ''; moodleZeichnen(); return; }
+    if (b.hasAttribute('data-moodle-uebernehmen')) {
+      const r = moodleUebernehmen(z.plan, z.auswahl);
+      dlg.close();
+      setTimeout(function () { alert('Moodle-Abgleich fertig: ' + r.neu + ' neu eingetragen' + (r.geaendert ? ', ' + r.geaendert + ' Termin(e) aktualisiert' : '') + '.'); }, 50);
+    }
+  }
+
+  /* ============================================================
      Heute-Seite in vier Designs (wählbar beim ersten Start und in den Einstellungen)
      ============================================================ */
   const HEUTE_STILE = [
@@ -1048,7 +1276,7 @@ function starteApp() {
     liste = sortiere(liste);
     let h = '<div class="seite"><div class="kopf"><div><h1>Alle Aufgaben</h1>' +
       '<div class="unter">Suchen, filtern und sortieren</div></div>' +
-      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-neu="leer">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn" data-moodle-start="1" title="Aufgaben aus elearning übernehmen">🎓<span>Moodle</span></button><button class="btn btn-primary" data-neu="leer">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     h += '<div class="filter">' +
       '<input id="suchfeld" type="search" placeholder="Suche in Titel, Notizen, Unteraufgaben">' +
       '<select id="fltModul"><option value="">Alle Module</option>' +
@@ -1102,6 +1330,12 @@ function starteApp() {
 
     if (window.Notizen) h += '<div data-nb-einstellungen="1"></div>';
     if (window.Assistent) h += '<div data-ki-einstellungen="1"></div>';
+
+    const mc = moodleCfg();
+    h += '<div class="box"><h3>Moodle-Abgleich</h3><p>Übernimmt Abgaben und Tests aus dem elearning-Kalender – ohne Passwort, nichts wird doppelt eingetragen. In Moodle wird nichts gestartet oder abgegeben.</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" data-moodle-start="1">' + (mc.url ? 'Jetzt abgleichen' : 'Moodle verbinden') + '</button>' +
+      (mc.url ? '<button class="btn" data-moodle-trennen="1">Link entfernen</button>' : '') + '</div>' +
+      '<div class="hinweis ok" style="margin-top:12px">' + (mc.url ? 'Kalender-Link gespeichert' + (mc.zuletzt ? ' · zuletzt abgeglichen ' + esc(menschDatum(mc.zuletzt.slice(0, 10))) : '') : 'Noch nicht verbunden') + '</div></div>';
 
     h += '<div class="box"><h3>Heute-Ansicht</h3><p>Wähle, wie deine Heute-Seite aussieht.</p>' + stilWahlHTML(heuteStil() || 'klassisch') + '</div>';
 
@@ -1361,6 +1595,8 @@ function starteApp() {
         if (d && d.open) d.close();
         render(); return;
       }
+      if (ziel('data-moodle-start')) { moodleDialog(); return; }
+      if (ziel('data-moodle-trennen')) { if (confirm('Den gespeicherten Kalender-Link von diesem Gerät entfernen?')) { const c = moodleCfg(); delete c.url; moodleCfgSetzen(c); render(); } return; }
       if ((el = ziel('data-zeit-tag'))) { zeitTag = Number(el.getAttribute('data-zeit-tag')) || 0; render(); return; }
       if ((el = ziel('data-fokus-spaeter'))) {
         const id = el.getAttribute('data-fokus-spaeter'), i = fokusSpaeter.indexOf(id);
@@ -1540,9 +1776,10 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 23.4;
+  const VERSION = 24;
   const NEUIGKEITEN = [
-    ['🧩', 'Robuster bei langen Texten', 'Lange Titel, Modulnamen und Links werden jetzt sauber mit Silbentrennung umgebrochen statt abgeschnitten oder aus dem Bildschirm geschoben.']
+    ['🎓', 'Moodle-Abgleich', 'Übernimm Abgaben und Tests aus dem elearning-Kalender – ohne Passwort. Einmal unter Einstellungen → Moodle-Abgleich verbinden, danach in „Alle Aufgaben“ auf „Moodle“ tippen.'],
+    ['🧠', 'Nichts doppelt', 'Schon vorhandene Aufgaben werden erkannt, verschobene Termine aktualisiert. Vor dem Eintragen siehst du eine Vorschau.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
