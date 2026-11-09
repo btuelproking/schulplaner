@@ -568,12 +568,61 @@ select option{background:#FFFFFF;color:#1D1D1F}
 :root[data-thema="dunkel"] .auswahl-option:focus-visible{background:rgba(10,132,255,.20)}
 @media (hover:hover) and (pointer:fine){:root[data-thema="dunkel"] .auswahl-option:hover{background:rgba(10,132,255,.20)}}
 :root[data-thema="dunkel"] .auswahl-option.aktiv{color:#4EA6FF}
+
+/* =========================================================
+   Liquid Glass (iOS-Stil): schwebende Tab-Leiste, Lichtkanten, lebendiger Hintergrund
+   ========================================================= */
+:root{--ease-drawer:cubic-bezier(.32,.72,0,1);
+  --glas-rand:inset 0 1.5px 0 rgba(255,255,255,.95),inset 0 -1px 1px rgba(255,255,255,.35),inset 0 0 0 .5px rgba(255,255,255,.55)}
+:root[data-thema="dunkel"]{--glas-rand:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1px 1px rgba(255,255,255,.06),inset 0 0 0 .5px rgba(255,255,255,.10)}
+
+/* Lichtkante: ein Glanz oben links, wie Licht auf gewölbtem Glas */
+@media (min-width:881px){#sidebar{position:relative}}
+.fluessig > *{position:relative;z-index:1}
+.fluessig::before,#fabNeu::before,.nav-linse::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(120% 70% at 25% 0%,rgba(255,255,255,.55),transparent 58%)}
+:root[data-thema="dunkel"] .fluessig::before,:root[data-thema="dunkel"] .nav-linse::before{background:radial-gradient(120% 70% at 25% 0%,rgba(255,255,255,.16),transparent 58%)}
+.nav-linse{box-shadow:var(--glas-rand),0 4px 14px rgba(35,45,95,.12)!important}
+
+/* Heller Modus: Farbflächen hinter dem Glas wandern ganz langsam (wie im dunklen Modus) */
+:root:not([data-thema="dunkel"]) .tapete::before{content:"";position:absolute;inset:-12%;pointer-events:none;
+  background:
+    radial-gradient(34vmax 34vmax at 30% 40%,rgba(120,170,255,.45),transparent 62%),
+    radial-gradient(30vmax 30vmax at 72% 62%,rgba(255,160,205,.40),transparent 62%),
+    radial-gradient(26vmax 26vmax at 55% 20%,rgba(125,230,215,.35),transparent 62%);
+  animation:polarlicht 46s ease-in-out infinite alternate}
+
+@media (max-width:880px){
+  /* Tab-Leiste als freie Glaskapsel, daneben der runde +-Knopf auf gleicher Höhe */
+  #sidebar{right:84px;border-radius:999px;padding:6px;
+    box-shadow:var(--glas-rand),0 14px 36px rgba(30,40,90,.20),0 2px 8px rgba(30,40,90,.10);
+    transform-origin:left bottom;transition:transform 260ms var(--ease-drawer)}
+  #sidebar #nav{position:relative;z-index:1}
+  .nav-item .kurz{transition:opacity 180ms var(--ease-out)}
+  #fabNeu{right:10px;bottom:calc(12px + env(safe-area-inset-bottom));width:64px;height:64px;
+    box-shadow:var(--glas-rand),0 12px 28px rgba(0,102,224,.42);
+    transform-origin:right bottom;transition:transform 260ms var(--ease-drawer)}
+  #fabNeu:active{transform:scale(.92);transition-duration:120ms}
+  #fabNeu svg{position:relative}
+  /* beim Runterscrollen wird die Leiste kleiner und gibt Platz frei, beim Hochscrollen kommt sie zurück */
+  html.leiste-klein #sidebar{transform:scale(.84) translateY(4px)}
+  html.leiste-klein .nav-item .kurz{opacity:0}
+  html.leiste-klein #fabNeu{transform:scale(.86) translateY(4px)}
+}
+@media (prefers-reduced-motion: reduce){
+  :root:not([data-thema="dunkel"]) .tapete::before{animation:none}
+  html.leiste-klein #sidebar,html.leiste-klein #fabNeu{transform:none}
+  html.leiste-klein .nav-item .kurz{opacity:1}
+}
+@media (prefers-reduced-transparency: reduce){
+  .tapete::before,.tapete::after{display:none}
+}
 </style>
 </head>
 <body>
 <div class="tapete" aria-hidden="true"></div>
 <div id="app">
-  <aside id="sidebar">
+  <aside id="sidebar" class="fluessig">
     <div class="marke">SchulPlaner</div>
     <div class="marke-datum" id="kopfDatum"></div>
     <button class="btn btn-primary btn-block" id="neuBtnSeite" style="margin-top:16px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" fill="none"/></svg><span>Neue Aufgabe</span></button>

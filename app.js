@@ -964,6 +964,7 @@ function starteApp() {
     if (neu !== 'module') modulOffen = null;
     render();
     $('#content').scrollTop = 0;
+    document.documentElement.classList.remove('leiste-klein');
   }
 
   /* ---------- Aufgaben-Dialog ---------- */
@@ -1285,9 +1286,11 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 20;
+  const VERSION = 21;
   const NEUIGKEITEN = [
-    ['👆', 'Leichter zu treffen', 'Am iPhone und iPad sind alle Knöpfe jetzt mindestens so groß wie eine Fingerkuppe – auch der kleine Abhak-Kreis lässt sich leichter antippen.']
+    ['🫧', 'Liquid Glass', 'Am iPhone schwebt die Tab-Leiste jetzt als Glaskapsel, der +-Knopf sitzt daneben. Glas hat Lichtkanten wie bei iOS.'],
+    ['↕️', 'Mehr Platz beim Scrollen', 'Scrollst du nach unten, wird die Leiste kleiner – beim Hochscrollen kommt sie zurück.'],
+    ['🌈', 'Lebendiger Hintergrund', 'Auch im hellen Modus wandern die Farben hinter dem Glas jetzt ganz langsam.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
@@ -1333,6 +1336,16 @@ function starteApp() {
 
   render();
   navWischenEinrichten();
+  // Tab-Leiste am Handy: beim Runterscrollen kleiner, beim Hochscrollen wieder groß (wie bei iOS)
+  (function () {
+    let letzt = window.scrollY;
+    window.addEventListener('scroll', function () {
+      const y = window.scrollY, d = y - letzt;
+      if (Math.abs(d) < 8) return;
+      document.documentElement.classList.toggle('leiste-klein', d > 0 && y > 80);
+      letzt = y;
+    }, { passive: true });
+  })();
   setTimeout(neuigkeitenPruefen, 700);
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();
