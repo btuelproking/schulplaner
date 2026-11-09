@@ -1218,10 +1218,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 15;
+  const VERSION = 16;
   const NEUIGKEITEN = [
-    ['➡️', 'Lasso über Seiten hinweg', 'Ausgewähltes einfach auf die nächste Seite ziehen. Am Bildschirmrand scrollt es automatisch weiter.'],
-    ['✌️', 'Fingertipps abschaltbar', 'Rückgängig mit zwei und Wiederholen mit drei Fingern lassen sich im Notizbuch unter ⋯ → Einstellungen ausschalten.']
+    ['📱', 'Fühlt sich mehr wie eine App an', 'Knöpfe reagieren sofort beim Antippen, bleiben nicht mehr „hängen“ und ihr Text wird beim Gedrückthalten nicht mehr markiert. Die Seite federt nicht mehr als Ganzes nach.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

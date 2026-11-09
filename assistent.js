@@ -664,7 +664,8 @@
   const CSS = `
 #kiKnopf{position:fixed;right:28px;bottom:28px;z-index:40;width:56px;height:56px;border-radius:50%;border:1px solid rgba(255,255,255,.5);padding:14px;color:#fff;cursor:pointer;
   background:linear-gradient(140deg,#8E6BFF,#3E7BFF 55%,#22B8E8);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 10px 26px rgba(80,90,230,.42);transition:transform .15s ease}
-#kiKnopf:hover{transform:scale(1.05)} #kiKnopf:active{transform:scale(.95)}
+@media (hover:hover) and (pointer:fine){#kiKnopf:hover{transform:scale(1.05)}}
+#kiKnopf:active{transform:scale(.95)}
 #kiKnopf svg{width:100%;height:100%;display:block}
 html.ki-offen #kiKnopf{opacity:0;pointer-events:none}
 #kiPanel{position:fixed;right:20px;bottom:20px;top:20px;z-index:45;width:min(430px,calc(100vw - 40px));display:flex;flex-direction:column;border-radius:26px;overflow:hidden;
@@ -680,7 +681,10 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-logo-klein{width:34px;height:34px;border-radius:11px;padding:7px;color:#fff;background:linear-gradient(140deg,#8E6BFF,#3E7BFF 55%,#22B8E8);flex:0 0 34px}
 .ki-logo-klein svg{width:100%;height:100%;display:block}
 .ki-kopfknopf{width:36px;height:36px;border-radius:11px;border:0;background:transparent;color:var(--text);padding:8px;cursor:pointer}
-.ki-kopfknopf:hover{background:rgba(127,127,140,.14)}
+@media (hover:hover) and (pointer:fine){.ki-kopfknopf:hover{background:rgba(127,127,140,.14)}}
+.ki-kopfknopf:active,.ki-bildknopf:active{background:rgba(127,127,140,.2)}
+.ki-senden:active,.ki-stopp:active{transform:scale(.92)}
+.ki-vorschlaege button:active{transform:scale(.98)}
 .ki-kopfknopf svg{width:100%;height:100%;display:block}
 .ki-liste{flex:1;overflow-y:auto;padding:16px 14px 8px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .ki-msg{max-width:88%;padding:10px 14px;border-radius:18px;font-size:14.5px;line-height:1.45;word-wrap:break-word;overflow-wrap:break-word}
@@ -712,7 +716,7 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-vorschlaege{display:flex;flex-direction:column;gap:7px;margin-top:12px;width:100%}
 .ki-vorschlaege button{border:1px solid var(--kante);background:rgba(255,255,255,.6);color:var(--text);border-radius:14px;padding:10px 12px;font-size:13.5px;text-align:left;cursor:pointer}
 :root[data-thema="dunkel"] .ki-vorschlaege button{background:rgba(255,255,255,.06)}
-.ki-vorschlaege button:hover{border-color:var(--accent)}
+@media (hover:hover) and (pointer:fine){.ki-vorschlaege button:hover{border-color:var(--accent)}}
 .ki-bilder{align-self:flex-end;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:88%}
 .ki-bilder img{width:96px;height:96px;object-fit:cover;border-radius:14px;border:1px solid var(--kante);display:block}
 .ki-anhaenge{display:flex;gap:8px;margin:6px 12px 0;overflow-x:auto;padding-top:6px}
@@ -722,7 +726,7 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-anhang button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:2px solid var(--bg,#fff);background:#55555E;color:#fff;padding:3px;cursor:pointer}
 .ki-anhang button svg{width:100%;height:100%;display:block}
 .ki-bildknopf{width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:0;background:transparent;color:var(--muted);padding:7px;cursor:pointer}
-.ki-bildknopf:hover{background:rgba(127,127,140,.14);color:var(--text)}
+@media (hover:hover) and (pointer:fine){.ki-bildknopf:hover{background:rgba(127,127,140,.14);color:var(--text)}}
 .ki-bildknopf svg{width:100%;height:100%;display:block}
 .ki-form{display:flex;align-items:flex-end;gap:6px;margin:6px 12px 0;padding:6px;border-radius:22px;border:1px solid var(--kante);background:rgba(255,255,255,.8)}
 :root[data-thema="dunkel"] .ki-form{background:rgba(255,255,255,.07)}
