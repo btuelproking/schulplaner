@@ -3565,10 +3565,10 @@
     if (!liste.length) return '<div class="nb-lz-leer">Noch keine Aufnahmen. Tippe auf das Mikrofon, um den Unterricht aufzunehmen.</div>';
     return liste.map(function (a) {
       const i = E.seiten.findIndex(function (s) { return s.id === a.seite; });
-      return '<div class="nb-aufnahme" data-id="' + a.id + '"><button class="nb-play" data-play="' + a.id + '" aria-label="Abspielen">' + icon('play') + '</button>' +
+      return '<div class="nb-aufnahme" data-id="' + esc(a.id) + '"><button class="nb-play" data-play="' + esc(a.id) + '" aria-label="Abspielen">' + icon('play') + '</button>' +
         '<div><b>' + esc(a.titel) + '</b><small>' + dauerText(a.dauer) + (i >= 0 ? ' · Seite ' + (i + 1) : '') + '</small></div>' +
         (i >= 0 ? '<button class="nb-mini" data-zu="' + i + '">Zur Seite</button>' : '') +
-        '<button class="nb-mini" data-weg="' + a.id + '" aria-label="Löschen">' + icon('loeschen') + '</button><audio preload="none"></audio></div>';
+        '<button class="nb-mini" data-weg="' + esc(a.id) + '" aria-label="Löschen">' + icon('loeschen') + '</button><audio preload="none"></audio></div>';
     }).join('');
   }
   function aufnahmenBinden(p) {
@@ -3672,7 +3672,7 @@
       const nur = E.leisteTab === 'lesezeichen';
       const liste = E.seiten.map(function (s, i) { return { s: s, i: i }; }).filter(function (x) { return !nur || x.s.lz; });
       inhalt = '<div class="nb-sl-gitter' + (nur ? '' : ' nb-sl-sortierbar') + '">' + liste.map(function (x) {
-        return '<div class="nb-ueb-seite nb-sl-seite" data-id="' + x.s.id + '"><div class="nb-ueb-bild" style="aspect-ratio:' + x.s.b + '/' + x.s.h + '"><canvas></canvas>' +
+        return '<div class="nb-ueb-seite nb-sl-seite" data-id="' + esc(x.s.id) + '"><div class="nb-ueb-bild" style="aspect-ratio:' + (Number(x.s.b) || 1) + '/' + (Number(x.s.h) || 1) + '"><canvas></canvas>' +
           (x.s.lz ? '<span class="nb-ueb-band"></span>' : '') + '</div><div class="nb-ueb-fuss"><span class="nb-ueb-nr">' + (x.i + 1) + (x.s.lz && x.s.lz.t ? ' · ' + esc(x.s.lz.t) : '') + '</span>' +
           (nur ? '' : '<button data-kopie="1" title="Duplizieren">' + icon('kopieren') + '</button><button data-weg="1" title="Löschen">' + icon('loeschen') + '</button>') + '</div></div>';
       }).join('') + (nur ? (liste.length ? '' : '<div class="nb-lz-leer">Noch keine Lesezeichen.</div>') : '<button class="nb-sl-neu" data-neu="1">' + icon('plus') + 'Seite hinzufügen</button>') + '</div>';
@@ -3827,7 +3827,7 @@
       '<button class="btn btn-klein" data-u="neu">+ Seite</button><button class="nb-knopf" data-u="zu" aria-label="Schließen">' + icon('schliessen') + '</button></div>' +
       '<div class="nb-ueb-tipp">Zum Sortieren eine Seite gedrückt halten und ziehen.</div>' +
       '<div class="nb-ueb-gitter">' + E.seiten.map(function (s, i) {
-        return '<div class="nb-ueb-seite" data-id="' + s.id + '"><div class="nb-ueb-bild" style="aspect-ratio:' + s.b + '/' + s.h + '"><canvas></canvas>' +
+        return '<div class="nb-ueb-seite" data-id="' + esc(s.id) + '"><div class="nb-ueb-bild" style="aspect-ratio:' + (Number(s.b) || 1) + '/' + (Number(s.h) || 1) + '"><canvas></canvas>' +
           (s.lz ? '<span class="nb-ueb-band" title="' + esc(lesezeichenTitel(s, i)) + '"></span>' : '') + '</div>' +
           '<div class="nb-ueb-fuss"><span class="nb-ueb-nr">' + (i + 1) + (s.lz && s.lz.t ? ' · ' + esc(s.lz.t) : '') + '</span>' +
           '<button data-kopie="1" aria-label="Seite duplizieren" title="Duplizieren">' + icon('kopieren') + '</button>' +
@@ -5157,12 +5157,12 @@
   }
   function coverHTML(b, klein) {
     const c = COVER[b.cover] || COVER[0], m = modulInfo(b.modul_id);
-    return '<div class="nb-buch' + (klein ? ' nb-klein' : '') + '" data-nb-oeffnen="' + b.id + '">' +
+    return '<div class="nb-buch' + (klein ? ' nb-klein' : '') + '" data-nb-oeffnen="' + esc(b.id) + '">' +
       '<div class="nb-cover" style="--c1:' + c[0] + ';--c2:' + c[1] + '"><div class="nb-ruecken"></div><div class="nb-glanz"></div>' +
       '<div class="nb-etikett">' + esc(b.titel) + '</div>' +
-      '<button class="nb-mehr" data-nb-mehr="' + b.id + '" aria-label="Optionen für ' + esc(b.titel) + '">' + icon('mehr') + '</button></div>' +
+      '<button class="nb-mehr" data-nb-mehr="' + esc(b.id) + '" aria-label="Optionen für ' + esc(b.titel) + '">' + icon('mehr') + '</button></div>' +
       '<div class="nb-info"><div class="nb-titel">' + esc(b.titel) + '</div>' +
-      '<div class="nb-meta"><span class="mod-punkt" style="background:' + m.farbe + '"></span>' + esc(m.name) + '</div>' +
+      '<div class="nb-meta"><span class="mod-punkt" style="background:' + (/^#[0-9a-f]{3,8}$/i.test(String(m.farbe || '')) ? m.farbe : '#9A9AA2') + '"></span>' + esc(m.name) + '</div>' +
       '<div class="nb-meta nb-meta2">' + (b.anzahl || 1) + ((b.anzahl || 1) === 1 ? ' Seite' : ' Seiten') + ' · ' + datumText(b.geaendert) + '</div></div></div>';
   }
   function sortiert(liste) { return liste.slice().sort(function (a, b) { return (b.geaendert || 0) - (a.geaendert || 0); }); }
@@ -5214,7 +5214,7 @@
       module.forEach(function (m) {
         if (!vorhanden.has(m.id)) return;
         const n = buecher.filter(function (b) { return b.modul_id === m.id; }).length;
-        chips += '<button class="nb-chip' + (filterModul === m.id ? ' aktiv' : '') + '" data-nb-filter="' + m.id + '"><span class="mod-punkt" style="background:' + m.farbe + '"></span>' + esc(m.name) + ' <span>' + n + '</span></button>';
+        chips += '<button class="nb-chip' + (filterModul === m.id ? ' aktiv' : '') + '" data-nb-filter="' + esc(m.id) + '"><span class="mod-punkt" style="background:' + (/^#[0-9a-f]{3,8}$/i.test(String(m.farbe || '')) ? m.farbe : '#9A9AA2') + '"></span>' + esc(m.name) + ' <span>' + n + '</span></button>';
       });
       if (vorhanden.has('__ohne__')) chips += '<button class="nb-chip' + (filterModul === '__ohne__' ? ' aktiv' : '') + '" data-nb-filter="__ohne__">Ohne Modul</button>';
       const liste = sortiert(buecher.filter(function (b) {

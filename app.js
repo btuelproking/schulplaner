@@ -136,7 +136,7 @@ function importAltdaten(objekt) {
   const module = (objekt.module || []).map(function (m, i) {
     return {
       id: m.id || uid(), name: m.name || 'Modul',
-      farbe: m.farbe || MODUL_FARBEN[i % MODUL_FARBEN.length],
+      farbe: /^#[0-9a-f]{3,8}$/i.test(String(m.farbe || '')) ? m.farbe : MODUL_FARBEN[i % MODUL_FARBEN.length],
       geaendert: m.geaendert || zeit, geloescht: !!m.geloescht
     };
   });
@@ -372,7 +372,9 @@ function starteApp() {
     return m && !m.geloescht ? m : null;
   }
   function modulName(id) { const m = modulVon(id); return m ? m.name : 'Ohne Modul'; }
-  function modulFarbe(id) { const m = modulVon(id); return m ? m.farbe : '#9A9AA2'; }
+  /* Farben stammen auch aus importierten oder abgeglichenen Daten: nur echte Farbcodes in style-Attribute lassen */
+  function farbeSicher(f) { return /^#[0-9a-f]{3,8}$/i.test(String(f || '')) ? f : '#9A9AA2'; }
+  function modulFarbe(id) { const m = modulVon(id); return m ? farbeSicher(m.farbe) : '#9A9AA2'; }
   function aufgabeVon(id) { return daten.aufgaben.filter(function (t) { return t.id === id; })[0]; }
   function aufgabenAn(iso) { return aufgaben().filter(function (t) { return t.deadline === iso; }); }
 
@@ -438,7 +440,7 @@ function starteApp() {
     return null;
   }
   function punktHTML(farbe) {
-    return farbe ? '<span class="auswahl-punkt" style="background:' + farbe + '"></span>' : '';
+    return farbe ? '<span class="auswahl-punkt" style="background:' + farbeSicher(farbe) + '"></span>' : '';
   }
   function knopfBeschriften(sel) {
     const knopf = sel.nextElementSibling;
@@ -561,9 +563,9 @@ function starteApp() {
     const fertig = istFertig(t);
     const fp = fortschritt(t);
     const ueber = istUeberfaellig(t, heute);
-    let knopf = '<button class="status-knopf" data-status="' + t.id + '" aria-label="Status ändern"></button>';
-    if (fertig) knopf = '<button class="status-knopf fertig" data-status="' + t.id + '" aria-label="Wieder öffnen"></button>';
-    else if (t.status === 'In Bearbeitung') knopf = '<button class="status-knopf arbeit" data-status="' + t.id + '"></button>';
+    let knopf = '<button class="status-knopf" data-status="' + esc(t.id) + '" aria-label="Status ändern"></button>';
+    if (fertig) knopf = '<button class="status-knopf fertig" data-status="' + esc(t.id) + '" aria-label="Wieder öffnen"></button>';
+    else if (t.status === 'In Bearbeitung') knopf = '<button class="status-knopf arbeit" data-status="' + esc(t.id) + '"></button>';
 
     let meta = '';
     if (opt.modul !== false) {
@@ -581,13 +583,13 @@ function starteApp() {
         '<div class="balken-text">' + fp.fertig + '/' + fp.gesamt + ' Unteraufgaben</div>' +
         '<div class="unterliste">' +
         (t.unteraufgaben || []).slice(0, 4).map(function (s, i) {
-          return '<div class="sub' + (s.erledigt ? ' ok' : '') + '" data-sub-karte="' + t.id + '|' + i + '">' +
+          return '<div class="sub' + (s.erledigt ? ' ok' : '') + '" data-sub-karte="' + esc(t.id) + '|' + i + '">' +
             '<span class="sub-kreis"></span><span>' + esc(s.titel) + '</span></div>';
         }).join('') +
         ((t.unteraufgaben || []).length > 4 ? '<div style="color:var(--muted)">+ ' + ((t.unteraufgaben.length) - 4) + ' weitere</div>' : '') +
         '</div>';
     }
-    return '<div class="karte' + (fertig ? ' fertig' : '') + '" data-karte="' + t.id + '">' +
+    return '<div class="karte' + (fertig ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '">' +
       '<div class="karte-oben">' + knopf +
       '<div class="karte-titel">' + esc(t.titel) + '</div>' +
       '<span class="chip" style="color:' + PRIO_FARBE[t.prioritaet] + ';border-color:' + PRIO_FARBE[t.prioritaet] + '">' + esc(t.prioritaet) + '</span>' +
@@ -622,7 +624,7 @@ function starteApp() {
     }
     auswahlAufbereiten(c);
     if (geradeErledigt) {                         // Haken bestätigt das Abhaken mit einem kurzen „Plopp“
-      const k = c.querySelector('.status-knopf.fertig[data-status="' + geradeErledigt.id + '"]');
+      const k = c.querySelector('.status-knopf.fertig[data-status="' + (window.CSS && CSS.escape ? CSS.escape(geradeErledigt.id) : geradeErledigt.id) + '"]');
       if (k) k.classList.add('ploppt');
       geradeErledigt = null;
     }
@@ -745,12 +747,12 @@ function starteApp() {
       const fertig = liste.filter(istFertig);
       const ueber = offen.filter(function (t) { return istUeberfaellig(t, heute); });
       const anteil = liste.length ? Math.round(fertig.length / liste.length * 100) : 0;
-      h += '<button class="modul-karte" data-modul="' + m.id + '">' +
-        '<div class="strich" style="background:' + m.farbe + '"></div><div class="inhalt">' +
+      h += '<button class="modul-karte" data-modul="' + esc(m.id) + '">' +
+        '<div class="strich" style="background:' + farbeSicher(m.farbe) + '"></div><div class="inhalt">' +
         '<h3>' + esc(m.name) + '</h3>' +
         '<p>' + offen.length + ' offen · ' + fertig.length + ' erledigt</p>' +
         (ueber.length ? '<p class="warn">' + ueber.length + ' überfällig</p>' : '') +
-        '<div class="balken" style="margin-left:0"><i style="width:' + anteil + '%;background:' + m.farbe + '"></i></div>' +
+        '<div class="balken" style="margin-left:0"><i style="width:' + anteil + '%;background:' + farbeSicher(m.farbe) + '"></i></div>' +
         '</div></button>';
     });
     const ohne = aufgaben().filter(function (t) { return !modulVon(t.modul_id); });
@@ -767,7 +769,7 @@ function starteApp() {
     const m = ohneModul ? null : modulVon(modulOffen);
     if (!ohneModul && !m) { modulOffen = null; return htmlModule(); }
     const name = ohneModul ? 'Ohne Modul' : m.name;
-    const farbe = ohneModul ? '#9A9AA2' : m.farbe;
+    const farbe = ohneModul ? '#9A9AA2' : farbeSicher(m.farbe);
     const liste = aufgaben().filter(function (t) {
       return ohneModul ? !modulVon(t.modul_id) : t.modul_id === modulOffen;
     });
@@ -779,7 +781,7 @@ function starteApp() {
     let h = '<div class="seite"><button class="zurueck" data-zurueck="1">‹ Zurück zu den Modulen</button>' +
       '<div class="kopf"><div><h1><span class="mod-punkt" style="width:12px;height:12px;background:' + farbe + '"></span> ' + esc(name) + '</h1>' +
       '<div class="unter">' + offen.length + ' offen · ' + fertig.length + ' erledigt</div></div><div class="kopf-rechts">' + themaKnopf() +
-      (ohneModul ? '' : '<button class="btn" data-modul-bearbeiten="' + m.id + '">Bearbeiten</button>') +
+      (ohneModul ? '' : '<button class="btn" data-modul-bearbeiten="' + esc(m.id) + '">Bearbeiten</button>') +
       '<button class="btn btn-primary" data-neu="modul">' + ICON_PLUS + '<span>Neue Aufgabe</span></button></div></div>';
     if (window.Notizen) h += '<div data-nb-modul="' + (ohneModul ? '__ohne__' : esc(m.id)) + '"></div>';
     if (ueber.length) h += abschnitt('Überfällig', ueber.length, 'rot') + listeHTML(ueber, { modul: false });
@@ -811,7 +813,7 @@ function starteApp() {
       '<input id="suchfeld" type="search" placeholder="Suche in Titel, Notizen, Unteraufgaben">' +
       '<select id="fltModul"><option value="">Alle Module</option>' +
       module().map(function (m) {
-        return '<option value="' + m.id + '"' + (filter.modul === m.id ? ' selected' : '') + '>' + esc(m.name) + '</option>';
+        return '<option value="' + esc(m.id) + '"' + (filter.modul === m.id ? ' selected' : '') + '>' + esc(m.name) + '</option>';
       }).join('') +
       '<option value="__ohne__"' + (filter.modul === '__ohne__' ? ' selected' : '') + '>Ohne Modul</option></select>' +
       '<select id="fltStatus"><option value="">Alle Stati</option>' +
@@ -946,8 +948,8 @@ function starteApp() {
     const ziel = $('#seitenModule');
     if (!ziel) return;
     ziel.innerHTML = module().map(function (m) {
-      return '<button class="seiten-modul" data-seite-modul="' + m.id + '">' +
-        '<span class="mod-punkt" style="background:' + m.farbe + '"></span>' + esc(m.name) + '</button>';
+      return '<button class="seiten-modul" data-seite-modul="' + esc(m.id) + '">' +
+        '<span class="mod-punkt" style="background:' + farbeSicher(m.farbe) + '"></span>' + esc(m.name) + '</button>';
     }).join('');
   }
   function zaehlerAktualisieren() {
@@ -1283,11 +1285,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 18;
+  const VERSION = 19;
   const NEUIGKEITEN = [
-    ['🫧', 'Tab-Wechsel wie bei iOS', 'Die Glas-Linse gleitet beim Wechseln zum neuen Tab. Am iPhone kannst du auch mit dem Finger über die Leiste streichen.'],
-    ['✅', 'Abhaken fühlt sich gut an', 'Der Haken springt beim Erledigen kurz auf – und ist die letzte Aufgabe für heute geschafft, gibt’s ein kleines 🎉.'],
-    ['💬', 'Lebendiger KI-Chat', 'Neue Nachrichten gleiten sanft herein, statt plötzlich dazustehen.']
+    ['🔒', 'Sicherheits-Update', 'Eine Lücke ist geschlossen: Eine manipulierte Sicherungsdatei konnte beim Einlesen fremden Code in der App ausführen. Jetzt werden solche Daten sicher behandelt.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
