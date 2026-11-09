@@ -1,5 +1,5 @@
 /* Service Worker: holt bei Internet immer die neueste Version, offline die gespeicherte. */
-const CACHE = 'schulplaner-v23';
+const CACHE = 'schulplaner-v23.2';
 const DATEIEN = [
   './', './index.html', './app.js', './notizen.js', './assistent.js', './pdfjs-lib.js', './pdfjs-worker.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './favicon-64.png', './apple-touch-icon.png'
@@ -21,7 +21,7 @@ self.addEventListener('fetch', function (ev) {
   if (anfrage.method !== 'GET') return;                     // Sync laeuft ueber POST
   if (new URL(anfrage.url).origin !== self.location.origin) return;
   ev.respondWith(
-    fetch(anfrage).then(function (antwort) {                // zuerst das Netz = immer aktuell
+    fetch(anfrage, { cache: 'no-cache' }).then(function (antwort) {   // zuerst das Netz, am Server nachfragen = nie halb alte, halb neue Dateien
       if (antwort && antwort.status === 200) {
         const kopie = antwort.clone();
         caches.open(CACHE).then(function (c) { c.put(anfrage, kopie); });
