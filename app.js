@@ -1539,9 +1539,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 23.2;
+  const VERSION = 23.3;
   const NEUIGKEITEN = [
-    ['🛠️', 'Fehler behoben', 'Die Design-Vorschau in den Einstellungen wird wieder angezeigt, und die App lädt Updates jetzt zuverlässiger vollständig.']
+    ['⚡', 'Flüssiger und akkuschonender', 'Glas-Unschärfe wird nur noch dort berechnet, wo sie sichtbar ist (Leisten, Fenster). Das Scrollen und der Hintergrund laufen jetzt viel flüssiger.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

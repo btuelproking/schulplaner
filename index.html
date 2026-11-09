@@ -30,7 +30,7 @@
   --text:#1D1D1F; --muted:#64646C; --muted2:#8B8B93;
   --accent:#0A7AFF; --accent-dunkel:#0062D6;
   --danger:#FF3B30; --done:#2FB956; --warn:#FF9500;
-  --glas:rgba(255,255,255,.50); --glas-stark:rgba(255,255,255,.70); --glas-zart:rgba(255,255,255,.30);
+  --glas:rgba(255,255,255,.50); --glas-stark:rgba(255,255,255,.70); --glas-zart:rgba(255,255,255,.30); --glas-fest:rgba(255,255,255,.58);
   --kante:rgba(255,255,255,.80);
   --blur:blur(28px) saturate(175%);
   --licht:inset 0 1px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.28);
@@ -42,7 +42,7 @@
   :root{ --glas:rgba(255,255,255,.86); --glas-stark:rgba(255,255,255,.93); --glas-zart:rgba(255,255,255,.75); }
 }
 @media (prefers-reduced-transparency: reduce){
-  :root{ --glas:rgba(255,255,255,.92); --glas-stark:rgba(255,255,255,.96); --glas-zart:rgba(255,255,255,.85); --blur:none; }
+  :root{ --glas:rgba(255,255,255,.92); --glas-stark:rgba(255,255,255,.96); --glas-zart:rgba(255,255,255,.85); --glas-fest:rgba(255,255,255,.94); --blur:none; }
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -85,10 +85,14 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 /* Gemeinsame Glas-Eigenschaften */
 #sidebar,.stat,.karte,.modul-karte,.tagespanel,.box,.kal,.sync-chip,.pfeil{
   background:var(--glanz),var(--glas);
-  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
   border:1px solid var(--kante);
   box-shadow:var(--licht),var(--schatten);
 }
+
+/* Echte Unschärfe nur, wo wirklich Inhalt darunter durchscrollt (Leisten, Fenster). Karten über dem
+   ruhigen Farbverlauf brauchen sie nicht – sie würden bei wanderndem Hintergrund jedes Bild neu gerechnet. */
+#sidebar{-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.stat,.karte,.modul-karte,.tagespanel,.box,.kal,.sync-chip,.pfeil,.h-glas{background:var(--glanz),var(--glas-fest)}
 
 /* ---------- Grundlayout ---------- */
 #app{display:flex;height:100vh;height:100dvh;padding:14px;gap:14px}
@@ -99,8 +103,7 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 }
 #content{
   flex:1;min-width:0;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:var(--r-gross);
-  background:rgba(255,255,255,.22);
-  -webkit-backdrop-filter:blur(44px) saturate(160%);backdrop-filter:blur(44px) saturate(160%);
+  background:rgba(255,255,255,.26);
   border:1px solid rgba(255,255,255,.55);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 24px 60px rgba(35,45,95,.16);
 }
@@ -389,7 +392,7 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
   .leer.geschafft{animation:dlg-schleier 200ms ease-out}
 }
 @media (prefers-contrast: more){
-  :root{ --glas:rgba(255,255,255,.94); --glas-stark:rgba(255,255,255,.98); --glas-zart:rgba(255,255,255,.88); --kante:rgba(0,0,0,.35); --muted:#3C3C43; }
+  :root{ --glas:rgba(255,255,255,.94); --glas-stark:rgba(255,255,255,.98); --glas-zart:rgba(255,255,255,.88); --glas-fest:rgba(255,255,255,.96); --kante:rgba(0,0,0,.35); --muted:#3C3C43; }
   :root[data-thema="dunkel"]{ --kante:rgba(255,255,255,.45); }
 }
 
@@ -401,7 +404,7 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
   --text:#F2F2F7; --muted:#A4A4B0; --muted2:#787886;
   --accent:#0A84FF; --accent-dunkel:#0060DF;
   --danger:#FF453A; --done:#30D158; --warn:#FF9F0A;
-  --glas:rgba(24,26,46,.36); --glas-stark:rgba(32,35,60,.56); --glas-zart:rgba(16,18,34,.30);
+  --glas:rgba(24,26,46,.36); --glas-stark:rgba(32,35,60,.56); --glas-zart:rgba(16,18,34,.30); --glas-fest:rgba(30,33,62,.40);
   --kante:rgba(255,255,255,.12);
   --blur:blur(30px) saturate(190%);
   --licht:inset 0 1px 0 rgba(255,255,255,.17), inset 0 0 0 1px rgba(255,255,255,.03);
@@ -434,8 +437,7 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
 }
 :root[data-thema="dunkel"] .tapete::after{
   /* ein schmales Lichtband quer durchs Bild – das eigentliche Polarlicht */
-  background:linear-gradient(115deg, transparent 30%, rgba(80,255,210,.16) 43%, rgba(120,140,255,.20) 52%, transparent 66%);
-  filter:blur(30px);
+  background:linear-gradient(115deg, transparent 22%, rgba(80,255,210,.06) 34%, rgba(80,255,210,.15) 43%, rgba(120,140,255,.19) 52%, rgba(120,140,255,.07) 61%, transparent 72%);
   animation:polarband 34s ease-in-out infinite alternate;
 }
 @keyframes polarlicht{
@@ -453,7 +455,7 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
 
 /* Flächen, die im hellen Modus fest weiß getönt sind */
 :root[data-thema="dunkel"] #content{
-  background:rgba(14,16,30,.16);border-color:rgba(255,255,255,.08);
+  background:rgba(14,16,30,.30);border-color:rgba(255,255,255,.08);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 24px 60px rgba(0,0,0,.45);
 }
 :root[data-thema="dunkel"] .nav-item:active,
@@ -573,7 +575,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
 /* =========================================================
    Heute-Seite: Widgets, Zeitleiste, Fokus + Auswahl
    ========================================================= */
-.h-glas{background:var(--glanz),var(--glas);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border:1px solid var(--kante);box-shadow:var(--licht),var(--schatten)}
+.h-glas{border:1px solid var(--kante);box-shadow:var(--licht),var(--schatten)}
 .h-titel{font-weight:650;font-size:15.5px;word-break:break-word}
 .h-u{font-size:12.5px;color:var(--muted);margin-top:2px}
 .h-chip{margin-left:auto;font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap;flex:0 0 auto}
