@@ -1218,9 +1218,11 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 16;
+  const VERSION = 17;
   const NEUIGKEITEN = [
-    ['📱', 'Fühlt sich mehr wie eine App an', 'Knöpfe reagieren sofort beim Antippen, bleiben nicht mehr „hängen“ und ihr Text wird beim Gedrückthalten nicht mehr markiert. Die Seite federt nicht mehr als Ganzes nach.']
+    ['✨', 'Flüssigere Bewegungen', 'Fenster erscheinen sanft, Menüs im Notizbuch wachsen aus ihrem Knopf und alle Animationen nutzen weichere, Apple-ähnliche Kurven.'],
+    ['👇', 'KI-Chat wegwischen', 'Am iPhone den Chat einfach oben am Kopf nach unten wischen, um ihn zu schließen.'],
+    ['👁️', 'Mehr Kontrast', 'Ist in den Bedienungshilfen „Kontrast erhöhen“ an, wird das Glas deckender und die Ränder deutlicher.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

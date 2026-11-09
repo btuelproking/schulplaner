@@ -3055,6 +3055,12 @@
     x = grenze(x, 8, wr.width - pb - 8);
     if (y + ph > wr.height - 8) y = Math.max(8, a.top - ph - 8 - wr.top);
     p.style.left = x + 'px'; p.style.top = y + 'px';
+    // aus dem Knopf heraus wachsen, der es geöffnet hat (kurz, weil Menüs oft geöffnet werden)
+    if (p.animate && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      const ox = grenze(a.left + a.width / 2 - wr.left - x, 0, pb), oy = (a.top - wr.top) > y ? ph : 0;
+      p.style.transformOrigin = ox + 'px ' + oy + 'px';
+      p.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'none' }], { duration: 150, easing: 'cubic-bezier(.23,1,.32,1)' });
+    }
     p.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     E.popover = p;
     if (binden) binden(p);
@@ -5682,10 +5688,10 @@ html.nb-offen,html.nb-offen body{overflow:hidden;overscroll-behavior:none}
 .nb-umschalter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;font-size:14.5px;cursor:pointer}
 .nb-umschalter input{position:absolute;opacity:0;pointer-events:none}
 .nb-umschalter i{position:relative;width:46px;height:28px;flex:0 0 46px;border-radius:14px;background:rgba(120,120,128,.32);transition:background .18s ease}
-.nb-umschalter i::after{content:"";position:absolute;left:2px;top:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:transform .18s ease}
+.nb-umschalter i::after{content:"";position:absolute;left:2px;top:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:transform 200ms cubic-bezier(.77,0,.175,1)}
 .nb-umschalter input:checked+i{background:#34C759}
 .nb-umschalter input:checked+i::after{transform:translateX(18px)}
-.nb-toast{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));z-index:20;transform:translate(-50%,20px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:12px;max-width:min(560px,calc(100vw - 24px));padding:10px 16px;border-radius:14px;background:rgba(28,28,34,.92);color:#fff;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.25);transition:opacity .2s ease,transform .2s ease}
+.nb-toast{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));z-index:20;transform:translate(-50%,20px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:12px;max-width:min(560px,calc(100vw - 24px));padding:10px 16px;border-radius:14px;background:rgba(28,28,34,.92);color:#fff;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.25);transition:opacity 220ms cubic-bezier(.23,1,.32,1),transform 220ms cubic-bezier(.23,1,.32,1)}
 .nb-toast.sichtbar{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 .nb-toast button{border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:9px;padding:6px 10px;font-weight:650;white-space:nowrap;cursor:pointer}
 body>.nb-toast{position:fixed}
@@ -5934,7 +5940,7 @@ dialog.nb-wahl .dlg-koerper{max-height:none;padding-top:22px}
 /* Umkreisen, Zettel, Aufnahme */
 .nb-umkreis{position:absolute;z-index:4;display:flex;align-items:center;gap:6px;border:0;border-radius:12px;padding:7px 12px;background:var(--accent);color:#fff;font:inherit;font-size:13.5px;font-weight:650;box-shadow:0 8px 20px rgba(10,122,255,.35);cursor:pointer;animation:nb-auf .18s ease}
 .nb-umkreis svg{width:17px;height:17px}
-@keyframes nb-auf{from{transform:scale(.8);opacity:0}to{transform:none;opacity:1}}
+@keyframes nb-auf{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
 .nb-text.nb-zettel .nb-text-inhalt{padding:10px;border-radius:3px;box-shadow:0 3px 8px rgba(0,0,0,.18);color:#1D1D1F}
 .nb-editor.wz-zettel .nb-text.nb-zettel{pointer-events:auto}
 .nb-editor.wz-zettel .nb-zettel.aktiv .nb-text-inhalt{box-shadow:0 0 0 2px var(--accent),0 3px 8px rgba(0,0,0,.18)}

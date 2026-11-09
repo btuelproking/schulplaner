@@ -582,6 +582,7 @@
       e.preventDefault(); bilderDazu(e.dataTransfer.files);
     });
     el.stopp.addEventListener('click', function () { if (abbrechen) abbrechen.abort(); });
+    wischenEinrichten(p);
     el.eingabe.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); p.querySelector('form').requestSubmit ? p.querySelector('form').requestSubmit() : p.querySelector('form').dispatchEvent(new Event('submit', { cancelable: true })); }
       if (e.key === 'Escape') umschalten(false);
@@ -600,6 +601,40 @@
       const o = e.target.closest('[data-ki-oeffnen]');
       if (o && K.oeffneAufgabe) { const t = K.aufgabeVon(o.getAttribute('data-ki-oeffnen')); if (t && !t.geloescht) K.oeffneAufgabe(t.id); }
     });
+  }
+  /* Am Handy: Chat am Kopf nach unten wegwischen – folgt dem Finger 1:1, ein schneller Wisch reicht */
+  function wischenEinrichten(p) {
+    const kopf = p.querySelector('.ki-kopf');
+    let z = null;
+    kopf.addEventListener('pointerdown', function (e) {
+      if (!offen || e.target.closest('button') || !window.matchMedia('(max-width:880px)').matches) return;
+      if (z) return;                                                    // zweiter Finger: ignorieren
+      z = { id: e.pointerId, y0: e.clientY, dy: 0, t: performance.now(), verlauf: [] };
+      try { kopf.setPointerCapture(e.pointerId); } catch (x) { }
+    });
+    kopf.addEventListener('pointermove', function (e) {
+      if (!z || e.pointerId !== z.id) return;
+      let dy = e.clientY - z.y0;
+      if (!z.los && Math.abs(dy) < 8) return;                           // kleine Schwelle, dann 1:1
+      z.los = true;
+      if (dy < 0) dy = -Math.pow(-dy, 0.7);                             // nach oben: Widerstand statt harter Stopp
+      z.dy = dy;
+      z.verlauf.push({ y: e.clientY, t: performance.now() });
+      if (z.verlauf.length > 5) z.verlauf.shift();
+      p.style.transition = 'none';
+      p.style.transform = 'translateY(' + dy + 'px)';
+    });
+    const ende = function (e) {
+      if (!z || e.pointerId !== z.id) return;
+      const v = z.verlauf, n = v.length;
+      const tempo = n > 1 ? (v[n - 1].y - v[0].y) / Math.max(1, v[n - 1].t - v[0].t) : 0;   // px pro ms
+      const weg = z.los && (z.dy > Math.min(160, p.offsetHeight * 0.25) || tempo > 0.5);
+      z = null;
+      p.style.transition = ''; p.style.transform = '';                  // CSS übernimmt ab der aktuellen Position
+      if (weg) umschalten(false);
+    };
+    kopf.addEventListener('pointerup', ende);
+    kopf.addEventListener('pointercancel', ende);
   }
   function hoehe() { el.eingabe.style.height = 'auto'; el.eingabe.style.height = Math.min(140, el.eingabe.scrollHeight) + 'px'; }
   function umschalten(an) {
@@ -671,10 +706,10 @@ html.ki-offen #kiKnopf{opacity:0;pointer-events:none}
 #kiPanel{position:fixed;right:20px;bottom:20px;top:20px;z-index:45;width:min(430px,calc(100vw - 40px));display:flex;flex-direction:column;border-radius:26px;overflow:hidden;
   border:1px solid var(--kante);background:linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,0) 30%),rgba(246,247,253,.86);
   -webkit-backdrop-filter:blur(40px) saturate(180%);backdrop-filter:blur(40px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 30px 80px rgba(20,25,60,.30);
-  transform:translateX(calc(100% + 40px));opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease;color:var(--text)}
+  transform:translateX(calc(100% + 40px));opacity:0;pointer-events:none;transition:transform 300ms cubic-bezier(.32,.72,0,1),opacity 200ms ease-out;color:var(--text)}
 html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 :root[data-thema="dunkel"] #kiPanel{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 30%),rgba(26,28,46,.92)}
-.ki-kopf{display:flex;align-items:center;gap:4px;padding:14px 12px 12px 16px;border-bottom:1px solid var(--kante)}
+.ki-kopf{display:flex;align-items:center;gap:4px;padding:14px 12px 12px 16px;border-bottom:1px solid var(--kante);touch-action:none}
 .ki-titel{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
 .ki-titel b{display:block;font-size:16px}
 .ki-titel small{display:block;font-size:12px;color:var(--muted)}

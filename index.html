@@ -49,7 +49,16 @@
 /* App-Gefühl auf iPhone/iPad: kein Gummiband der ganzen Seite, Knöpfe reagieren sofort und ihr Text wird beim Halten nicht markiert */
 html,body{overscroll-behavior:none}
 button,a,[role="button"],label.nb-umschalter{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-:root{--ease-out:cubic-bezier(.23,1,.32,1)}
+:root{--ease-out:cubic-bezier(.23,1,.32,1);--ease-in-out:cubic-bezier(.77,0,.175,1)}
+/* Fenster erscheinen als Material statt einfach aufzuploppen (selten genutzt -> darf animiert sein) */
+dialog[open]{animation:dlg-auf 220ms var(--ease-out)}
+dialog[open]::backdrop{animation:dlg-schleier 220ms ease-out}
+@keyframes dlg-auf{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@keyframes dlg-schleier{from{opacity:0}to{opacity:1}}
+@media (max-width:880px){
+  dialog[open]:not(.neu-dlg):not(.nb-wahl){animation-name:dlg-hoch}
+  @keyframes dlg-hoch{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+}
 html,body{height:100%}
 body{
   margin:0;color:var(--text);background:#E9ECF5;
@@ -168,13 +177,13 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .stat.blau b{color:var(--accent)} .stat.rot b{color:var(--danger)} .stat.gruen b{color:var(--done)}
 
 /* ---------- Aufgabenkarte ---------- */
-.karte{border-radius:var(--r);padding:15px 18px;margin-bottom:10px;cursor:pointer;transition:transform .12s ease}
+.karte{border-radius:var(--r);padding:15px 18px;margin-bottom:10px;cursor:pointer;transition:transform 140ms var(--ease-out)}
 .karte:active{transform:scale(.993)}
 .karte-oben{display:flex;align-items:center;gap:12px}
 .status-knopf{
   flex:0 0 24px;width:24px;height:24px;border-radius:50%;padding:0;
   border:2px solid #A9A9B3;background:rgba(255,255,255,.7);
-  display:flex;align-items:center;justify-content:center;transition:transform .12s ease;
+  display:flex;align-items:center;justify-content:center;transition:transform 140ms var(--ease-out);
 }
 .status-knopf:active{transform:scale(.88)}
 .status-knopf.arbeit{border-color:var(--accent);background:linear-gradient(90deg,var(--accent) 50%,rgba(255,255,255,.75) 50%)}
@@ -199,7 +208,7 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .unterliste{margin:9px 0 0 36px;font-size:14px}
 .unterliste > div{padding:3px 0}
 .unterliste .sub{display:flex;align-items:center;gap:9px;cursor:pointer;width:fit-content;max-width:100%}
-.sub-kreis{width:18px;height:18px;flex:0 0 18px;border-radius:50%;border:1.7px solid #ADADB7;background:rgba(255,255,255,.75);transition:transform .12s ease}
+.sub-kreis{width:18px;height:18px;flex:0 0 18px;border-radius:50%;border:1.7px solid #ADADB7;background:rgba(255,255,255,.75);transition:transform 140ms var(--ease-out)}
 .sub:active .sub-kreis{transform:scale(.85)}
 .sub.ok .sub-kreis{
   border-color:var(--done);
@@ -358,7 +367,14 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
   .modul-karte h3{font-size:15px}
 }
 @media (max-width:380px){ .modul-gitter{grid-template-columns:1fr} }
-@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important}
+  dialog[open]{animation:dlg-schleier 160ms ease-out}            /* nur einblenden, keine Bewegung */
+}
+@media (prefers-contrast: more){
+  :root{ --glas:rgba(255,255,255,.94); --glas-stark:rgba(255,255,255,.98); --glas-zart:rgba(255,255,255,.88); --kante:rgba(0,0,0,.35); --muted:#3C3C43; }
+  :root[data-thema="dunkel"]{ --kante:rgba(255,255,255,.45); }
+}
 
 /* =========================================================
    Dunkelmodus „Polarlicht“ – Rauchglas über Nachthimmel
@@ -492,7 +508,7 @@ html.thema-wechsel *, html.thema-wechsel *::before, html.thema-wechsel *::after{
 }
 @media (hover:hover) and (pointer:fine){.auswahl-knopf:hover{border-color:rgba(10,132,255,.35)}}
 .auswahl-knopf[aria-expanded="true"],.auswahl-knopf:focus-visible{border-color:rgba(10,122,255,.6);box-shadow:0 0 0 3px rgba(10,122,255,.18);outline:none}
-.auswahl-knopf svg{width:16px;height:16px;flex:0 0 16px;color:var(--muted);margin-left:auto;transition:transform .15s ease}
+.auswahl-knopf svg{width:16px;height:16px;flex:0 0 16px;color:var(--muted);margin-left:auto;transition:transform 180ms var(--ease-out)}
 .auswahl-knopf[aria-expanded="true"] svg{transform:rotate(180deg)}
 .auswahl-text{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
 .auswahl-text span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
