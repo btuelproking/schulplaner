@@ -216,6 +216,7 @@ function starteApp() {
   let filter = { suche: '', modul: '', status: '', prio: '' };
   let syncLaeuft = false, syncTimer = null, letzterSync = null, syncText = '', syncKlasse = 'grau';
   let dlgState = null, modulState = null;
+  let geradeErledigt = null;                     // Aufgabe, die eben abgehakt wurde (für die kurze Bestätigungs-Animation)
 
   const $ = function (s) { return document.querySelector(s); };
   const esc = function (s) {
@@ -397,6 +398,7 @@ function starteApp() {
     } else {
       t.status_vorher = t.status;
       t.status = 'Abgeschlossen';
+      geradeErledigt = { id: t.id, heute: t.deadline === heuteISO() };
       (t.unteraufgaben || []).forEach(function (s) { s.erledigt = true; });
     }
     t.geaendert = jetztISO();
@@ -619,6 +621,11 @@ function starteApp() {
       if (s) { s.value = filter.suche; }
     }
     auswahlAufbereiten(c);
+    if (geradeErledigt) {                         // Haken bestätigt das Abhaken mit einem kurzen „Plopp“
+      const k = c.querySelector('.status-knopf.fertig[data-status="' + geradeErledigt.id + '"]');
+      if (k) k.classList.add('ploppt');
+      geradeErledigt = null;
+    }
     if (window.Notizen) { try { window.Notizen.nachRender(c); } catch (e) { console.error(e); } }
     if (window.Assistent) { try { window.Assistent.nachRender(c); } catch (e) { console.error(e); } }
   }
@@ -655,7 +662,10 @@ function starteApp() {
 
     if (ueber.length) h += abschnitt('Überfällig', ueber.length, 'rot') + listeHTML(ueber);
     h += abschnitt('Heute fällig', heuteListe.length, 'blau');
+    // eben die letzte Aufgabe von heute abgehakt: kleiner Moment der Freude (selten -> darf sein)
+    const allesGeschafft = !heuteListe.length && geradeErledigt && geradeErledigt.heute;
     h += heuteListe.length ? listeHTML(heuteListe, { datum: false })
+      : allesGeschafft ? '<div class="leer geschafft"><span>🎉</span>Alles für heute erledigt!</div>'
       : '<div class="leer">Heute ist nichts fällig. Gut geplant.</div>';
     if (inArbeit.length) h += abschnitt('In Bearbeitung', inArbeit.length) + listeHTML(inArbeit);
     if (bald.length) h += abschnitt('Nächste 7 Tage', bald.length) + listeHTML(bald);
@@ -869,13 +879,68 @@ function starteApp() {
     { id: 'notizen', text: 'Notizbücher', kurz: 'Notizen', icon: 'M6 3h12a1 1 0 011 1v16a1 1 0 01-1 1H6z M6 3v18 M9.5 8h6 M9.5 11.5h6 M3.5 7h3 M3.5 12h3 M3.5 17h3' },
     { id: 'einstellungen', text: 'Einstellungen', kurz: 'Sync', icon: 'M12 8a4 4 0 100 8 4 4 0 000-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3' }
   ];
+  /* Glas-Linse unter dem aktiven Tab: gleitet beim Wechsel wie ein Tropfen zum neuen Tab (wie bei iOS) */
   function zeichneNav() {
-    $('#nav').innerHTML = NAV.map(function (n) {
+    const nav = $('#nav'), alt = nav.querySelector('.nav-linse');
+    const vorher = alt && alt.offsetWidth ? { x: alt.offsetLeft, y: alt.offsetTop, b: alt.offsetWidth, h: alt.offsetHeight } : null;
+    nav.innerHTML = NAV.map(function (n) {
       const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
         n.icon.split(' M').map(function (p, i) { return '<path d="' + (i ? 'M' + p : p) + '"/>'; }).join('') + '</svg>';
       return '<button class="nav-item' + (ansicht === n.id ? ' aktiv' : '') + '" data-ansicht="' + n.id + '">' +
         svg + '<span class="lang">' + n.text + '</span><span class="kurz">' + n.kurz + '</span></button>';
-    }).join('');
+    }).join('') + '<span class="nav-linse" aria-hidden="true"></span>';
+    nav.classList.add('mit-linse');
+    linseSetzen(vorher);
+  }
+  function linseSetzen(vorher, ziel) {
+    const nav = $('#nav'), l = nav.querySelector('.nav-linse');
+    const a = ziel || nav.querySelector('.nav-item.aktiv');
+    if (!l) return;
+    if (!a || !a.offsetWidth) { l.style.opacity = '0'; return; }
+    l.style.opacity = '';
+    l.style.left = a.offsetLeft + 'px'; l.style.top = a.offsetTop + 'px';
+    l.style.width = a.offsetWidth + 'px'; l.style.height = a.offsetHeight + 'px';
+    if (!vorher || !l.animate || (vorher.x === a.offsetLeft && vorher.y === a.offsetTop)) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // vom alten Platz aus starten (FLIP) und unterwegs in Bewegungsrichtung leicht dehnen
+    const dx = vorher.x + vorher.b / 2 - (a.offsetLeft + a.offsetWidth / 2), dy = vorher.y + vorher.h / 2 - (a.offsetTop + a.offsetHeight / 2);
+    const sx = vorher.b / a.offsetWidth, sy = vorher.h / a.offsetHeight, quer = Math.abs(dx) >= Math.abs(dy);
+    const dehnen = quer ? 'scale(1.22,.9)' : 'scale(.96,1.18)';
+    l.animate([
+      { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + sx + ',' + sy + ')' },
+      { transform: 'translate(' + dx * 0.4 + 'px,' + dy * 0.4 + 'px) ' + dehnen, offset: 0.45 },
+      { transform: 'none' }
+    ], { duration: 420, easing: 'cubic-bezier(.32,.72,0,1)' });
+  }
+  /* Am Handy mit dem Finger über die Leiste streichen: die Linse folgt, beim Loslassen wird der Tab gewählt */
+  function navWischenEinrichten() {
+    const nav = $('#nav');
+    let z = null;
+    const itemBei = function (x) {
+      let best = null;
+      nav.querySelectorAll('.nav-item').forEach(function (b) { const r = b.getBoundingClientRect(); if (x >= r.left && x <= r.right) best = b; });
+      return best;
+    };
+    nav.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse' || z || !window.matchMedia('(max-width:880px)').matches) return;
+      z = { id: e.pointerId, x0: e.clientX, los: false };
+    });
+    nav.addEventListener('pointermove', function (e) {
+      if (!z || e.pointerId !== z.id) return;
+      if (!z.los && Math.abs(e.clientX - z.x0) < 10) return;            // erst ab 10 px gilt es als Wischen
+      if (!z.los) { z.los = true; try { nav.setPointerCapture(e.pointerId); } catch (x) { } nav.classList.add('wischt'); }
+      const b = itemBei(e.clientX);
+      if (b && b !== z.ziel) { z.ziel = b; linseSetzen(null, b); }
+    });
+    const ende = function (e) {
+      if (!z || e.pointerId !== z.id) return;
+      const ziel = z.los ? z.ziel : null;
+      z = null; nav.classList.remove('wischt');
+      if (ziel) { e.preventDefault(); zeige(ziel.getAttribute('data-ansicht')); }
+    };
+    nav.addEventListener('pointerup', ende);
+    nav.addEventListener('pointercancel', function (e) { if (z && e.pointerId === z.id) { z = null; nav.classList.remove('wischt'); linseSetzen(null); } });
+    window.addEventListener('resize', function () { linseSetzen(null); });
   }
   function zeichneSeitenModule() {
     const ziel = $('#seitenModule');
@@ -1218,11 +1283,11 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 17;
+  const VERSION = 18;
   const NEUIGKEITEN = [
-    ['✨', 'Flüssigere Bewegungen', 'Fenster erscheinen sanft, Menüs im Notizbuch wachsen aus ihrem Knopf und alle Animationen nutzen weichere, Apple-ähnliche Kurven.'],
-    ['👇', 'KI-Chat wegwischen', 'Am iPhone den Chat einfach oben am Kopf nach unten wischen, um ihn zu schließen.'],
-    ['👁️', 'Mehr Kontrast', 'Ist in den Bedienungshilfen „Kontrast erhöhen“ an, wird das Glas deckender und die Ränder deutlicher.']
+    ['🫧', 'Tab-Wechsel wie bei iOS', 'Die Glas-Linse gleitet beim Wechseln zum neuen Tab. Am iPhone kannst du auch mit dem Finger über die Leiste streichen.'],
+    ['✅', 'Abhaken fühlt sich gut an', 'Der Haken springt beim Erledigen kurz auf – und ist die letzte Aufgabe für heute geschafft, gibt’s ein kleines 🎉.'],
+    ['💬', 'Lebendiger KI-Chat', 'Neue Nachrichten gleiten sanft herein, statt plötzlich dazustehen.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
@@ -1267,6 +1332,7 @@ function starteApp() {
   }
 
   render();
+  navWischenEinrichten();
   setTimeout(neuigkeitenPruefen, 700);
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();

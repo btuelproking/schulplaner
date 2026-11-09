@@ -16,7 +16,8 @@
 
   let K = null, offen = false, laeuft = false, abbrechen = null;
   let el = null;
-  let anhaenge = [];                            // Bilder, die mit der nächsten Nachricht mitgehen
+  let anhaenge = [];
+  let gezeigt = -1;                             // so viele Nachrichten standen schon da (neue gleiten herein)                            // Bilder, die mit der nächsten Nachricht mitgehen
   const MAX_BILDER = 4;
   let verlauf = { inhalte: [], anzeige: [] };   // inhalte: Gemini-Format, anzeige: was im Chat steht
 
@@ -448,13 +449,14 @@
         '<div class="ki-vorschlaege">' + VORSCHLAEGE.map(function (v) { return '<button data-ki-vorschlag="' + esc(v) + '">' + esc(v) + '</button>'; }).join('') + '</div></div>';
     }
     verlauf.anzeige.forEach(function (m, i) {
+      const nk = gezeigt >= 0 && i >= gezeigt ? ' ki-neu' : '';
       if (m.wer === 'ich') {
-        if (m.bilder && m.bilder.length) h += '<div class="ki-bilder">' + m.bilder.map(function (b) { return '<img src="' + esc(b) + '" alt="Bild">'; }).join('') + '</div>';
-        if (m.text) h += '<div class="ki-msg ki-ich">' + esc(m.text).replace(/\n/g, '<br>') + '</div>';
+        if (m.bilder && m.bilder.length) h += '<div class="ki-bilder' + nk + '">' + m.bilder.map(function (b) { return '<img src="' + esc(b) + '" alt="Bild">'; }).join('') + '</div>';
+        if (m.text) h += '<div class="ki-msg ki-ich' + nk + '">' + esc(m.text).replace(/\n/g, '<br>') + '</div>';
       }
-      else if (m.wer === 'fehler') h += '<div class="ki-msg ki-fehler">' + esc(m.text) + '</div>';
+      else if (m.wer === 'fehler') h += '<div class="ki-msg ki-fehler' + nk + '">' + esc(m.text) + '</div>';
       else {
-        h += '<div class="ki-msg ki-ki">' + formatieren(m.text);
+        h += '<div class="ki-msg ki-ki' + nk + '">' + formatieren(m.text);
         if (m.aktionen && m.aktionen.length) {
           h += '<div class="ki-aktionen">' + m.aktionen.map(function (a, k) {
             return '<div class="ki-aktion' + (a.rueck ? ' ki-zurueck' : '') + '">' +
@@ -467,6 +469,7 @@
     });
     if (laeuft) h += '<div class="ki-msg ki-ki ki-tippt"><span></span><span></span><span></span></div>';
     el.liste.innerHTML = h;
+    gezeigt = verlauf.anzeige.length;
     if (nachUnten) runter();
   }
   function runter() { if (el) el.liste.scrollTop = el.liste.scrollHeight; }
@@ -641,6 +644,7 @@
     offen = an === undefined ? !offen : an;
     document.documentElement.classList.toggle('ki-offen', offen);
     if (offen) {
+      gezeigt = -1;                                 // beim Öffnen steht der Verlauf einfach da
       el.modell.textContent = cfg().schluessel ? MODELLE.find(function (m) { return m[0] === modell(); })[1].replace(' (empfohlen)', '') : 'kein Schlüssel eingetragen';
       zeichnen(true);
       if (window.matchMedia && window.matchMedia('(pointer:fine)').matches) setTimeout(function () { el.eingabe.focus(); }, 60);
@@ -741,6 +745,8 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-frage{align-self:stretch;padding:12px 14px;border-radius:16px;background:rgba(255,149,0,.12);border:1px solid rgba(255,149,0,.3);font-size:14px}
 .ki-frage-knoepfe{display:flex;gap:8px;margin-top:10px}
 .ki-tippt{display:flex;gap:5px;padding:14px 16px}
+.ki-neu{animation:ki-rein 220ms cubic-bezier(.23,1,.32,1)}
+@keyframes ki-rein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .ki-tippt span{width:7px;height:7px;border-radius:50%;background:var(--muted2);animation:ki-hupf 1.1s infinite ease-in-out}
 .ki-tippt span:nth-child(2){animation-delay:.15s} .ki-tippt span:nth-child(3){animation-delay:.3s}
 @keyframes ki-hupf{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-5px);opacity:1}}
@@ -782,7 +788,8 @@ html.nb-offen #kiKnopf,html.nb-offen #kiPanel{display:none}
   #kiPanel{left:0;right:0;top:0;bottom:0;width:auto;border-radius:0;border:0;transform:translateY(100%)}
   .ki-kopf{padding-top:calc(12px + env(safe-area-inset-top))}
 }
-@media (prefers-reduced-motion: reduce){#kiPanel{transition:none}.ki-tippt span{animation:none}}
+@media (prefers-reduced-motion: reduce){#kiPanel{transition:none}.ki-tippt span{animation:none}.ki-neu{animation:ki-blende 160ms ease-out}}
+@keyframes ki-blende{from{opacity:0}to{opacity:1}}
 `;
 
   window.Assistent = {
