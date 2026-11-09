@@ -41,6 +41,7 @@ function tageDazu(iso, tage) { const d = vonISO(iso); d.setDate(d.getDate() + ta
 function aktiv(liste) { return (liste || []).filter(function (e) { return !e.geloescht; }); }
 
 function istFertig(t) { return t.status === 'Abgeschlossen'; }
+function titelText(t) { return String(t.titel || '').trim() || '(ohne Titel)'; }
 function istUeberfaellig(t, heute) {
   heute = heute || heuteISO();
   return !!t.deadline && t.deadline < heute && !istFertig(t);
@@ -591,8 +592,8 @@ function starteApp() {
     }
     return '<div class="karte' + (fertig ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '">' +
       '<div class="karte-oben">' + knopf +
-      '<div class="karte-titel">' + esc(t.titel) + '</div>' +
-      '<span class="chip" style="color:' + PRIO_FARBE[t.prioritaet] + ';border-color:' + PRIO_FARBE[t.prioritaet] + '">' + esc(t.prioritaet) + '</span>' +
+      '<div class="karte-titel">' + esc(titelText(t)) + '</div>' +
+      (PRIO_FARBE[t.prioritaet] ? '<span class="chip" style="color:' + PRIO_FARBE[t.prioritaet] + ';border-color:' + PRIO_FARBE[t.prioritaet] + '">' + esc(t.prioritaet) + '</span>' : '') +
       '</div><div class="meta">' + meta + '</div>' + balken + '</div>';
   }
   function abschnitt(titel, anzahl, klasse) {
@@ -693,16 +694,16 @@ function starteApp() {
     let h = '<div class="seite h-widgets">' + heuteKopf('Heute') + '<div class="w-raster">';
     if (naechste) {
       const n = tageBis(naechste.deadline);
-      h += '<div class="w h-glas w-abgabe" data-karte="' + esc(naechste.id) + '"><h3>Nächste Abgabe</h3><div class="t">' + esc(naechste.titel) + '</div>' +
+      h += '<div class="w h-glas w-abgabe" data-karte="' + esc(naechste.id) + '"><h3>Nächste Abgabe</h3><div class="t">' + esc(titelText(naechste)) + '</div>' +
         '<div class="w-zeit">' + (n === 0 ? 'heute' : n === 1 ? 'morgen' : 'in ' + n + ' Tagen') + '</div><small>' + modulPunkt(naechste) + '</small></div>';
     } else h += '<div class="w h-glas"><h3>Nächste Abgabe</h3><div class="w-gross gruen">–</div><div class="w-klein">Keine Abgabe geplant</div></div>';
     h += '<div class="w h-glas w-mitte"><h3>Diese Woche</h3><div class="w-ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(127,127,150,.22)" stroke-width="4"/>' +
       '<circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--done)" stroke-width="4" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="' + Math.round(100 - anteil * 100) + '"/></svg><b>' + Math.round(anteil * 100) + '%</b></div>' +
       '<div class="w-klein">' + (woche.length ? wFertig + ' von ' + woche.length + ' erledigt' : 'Nichts fällig') + '</div></div>';
     h += '<div class="w h-glas breit"><h3>Heute fällig</h3>' + (heuteL.length ? heuteL.slice(0, 6).map(function (t) {
-      return '<div class="w-zeile' + (istFertig(t) ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '">' + statusKnopf(t) + '<div><div class="h-titel">' + esc(t.titel) + '</div><div class="h-u">' + modulPunkt(t) + '</div></div>' + faelligChip(t) + '</div>';
+      return '<div class="w-zeile' + (istFertig(t) ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '">' + statusKnopf(t) + '<div><div class="h-titel">' + esc(titelText(t)) + '</div><div class="h-u">' + modulPunkt(t) + '</div></div>' + faelligChip(t) + '</div>';
     }).join('') + (heuteL.length > 6 ? '<div class="h-u">+ ' + (heuteL.length - 6) + ' weitere</div>' : '') : '<div class="leer">Heute ist nichts fällig. Gut geplant.</div>') + '</div>';
-    h += '<div class="w h-glas"' + (ueber[0] ? ' data-karte="' + esc(ueber[0].id) + '"' : '') + '><h3>Überfällig</h3><div class="w-gross ' + (ueber.length ? 'rot' : 'gruen') + '">' + ueber.length + '</div><div class="w-klein">' + (ueber.length ? esc(ueber[0].titel) + (ueber.length > 1 ? ' und ' + (ueber.length - 1) + ' weitere' : '') : 'Alles im Plan') + '</div></div>';
+    h += '<div class="w h-glas"' + (ueber[0] ? ' data-karte="' + esc(ueber[0].id) + '"' : '') + '><h3>Überfällig</h3><div class="w-gross ' + (ueber.length ? 'rot' : 'gruen') + '">' + ueber.length + '</div><div class="w-klein">' + (ueber.length ? esc(titelText(ueber[0])) + (ueber.length > 1 ? ' und ' + (ueber.length - 1) + ' weitere' : '') : 'Alles im Plan') + '</div></div>';
     h += '<div class="w h-glas"><h3>Wichtig</h3><div class="w-gross">' + wichtig.length + '</div><div class="w-klein">Hohe Priorität in den nächsten 14 Tagen</div></div>';
     const buecher = window.Notizen && window.Notizen.zuletzt ? window.Notizen.zuletzt(3) : [];
     if (buecher.length) h += '<div class="w h-glas breit"><h3>Zuletzt geöffnet</h3><div class="w-buecher">' + buecher.map(function (b) {
@@ -714,7 +715,7 @@ function starteApp() {
   /* ---------- Zeitleiste: nach Zeit geordnet ---------- */
   function zeitKarte(t, i) {
     return '<div class="z-karte h-glas' + (istFertig(t) ? ' fertig' : '') + '" data-karte="' + esc(t.id) + '" style="--m:' + modulFarbe(t.modul_id) + ';animation-delay:' + Math.min(i, 8) * 40 + 'ms">' +
-      statusKnopf(t) + '<div class="z-text"><div class="h-titel">' + esc(t.titel) + '</div><div class="h-u">' + modulPunkt(t) +
+      statusKnopf(t) + '<div class="z-text"><div class="h-titel">' + esc(titelText(t)) + '</div><div class="h-u">' + modulPunkt(t) +
       ((t.unteraufgaben || []).length ? ' · ' + t.unteraufgaben.filter(function (s) { return s.erledigt; }).length + '/' + t.unteraufgaben.length + ' Schritte' : '') + '</div></div>' + faelligChip(t) + '</div>';
   }
   function htmlHeuteZeitleiste() {
@@ -733,7 +734,7 @@ function starteApp() {
     const danach = sortiere(offen.filter(function (t) { return t.deadline && t.deadline > tag; }));
     const ohne = sortiere(offen.filter(function (t) { return !t.deadline; }));
     const start = ueber.concat(amTag.filter(function (t) { return !istFertig(t); }))[0];
-    if (zeitTag === 0 && start) h += '<div class="z-fokus h-glas" data-karte="' + esc(start.id) + '"><div class="k">Fang hiermit an</div><p>' + esc(start.titel) + '</p></div>';
+    if (zeitTag === 0 && start) h += '<div class="z-fokus h-glas" data-karte="' + esc(start.id) + '"><div class="k">Fang hiermit an</div><p>' + esc(titelText(start)) + '</p></div>';
     const gruppe = function (titel, zahl, liste, leer) {
       return '<div class="z-gruppe"><h2>' + esc(titel) + ' <span>' + zahl + '</span></h2><div class="z-liste">' +
         (liste.length ? liste.map(zeitKarte).join('') : '<div class="leer">' + leer + '</div>') + '</div></div>';
@@ -768,7 +769,7 @@ function starteApp() {
     const label = !t.deadline ? 'Als Nächstes · ohne Datum' : t.deadline < heute ? 'Überfällig – zuerst das' : t.deadline === heute ? 'Als Nächstes · heute fällig' : 'Als Nächstes · ' + menschDatum(t.deadline);
     const neueKarte = t.id !== letzteFokusId; letzteFokusId = t.id;
     h += '<div class="f-karte h-glas' + (neueKarte ? ' rein' : '') + '" data-fokus="' + esc(t.id) + '"><div class="f-label">' + esc(label) + '</div>' +
-      '<h2 data-karte="' + esc(t.id) + '">' + esc(t.titel) + '</h2><div class="f-meta"><span>' + modulPunkt(t) + '</span>' + faelligChip(t) +
+      '<h2 data-karte="' + esc(t.id) + '">' + esc(titelText(t)) + '</h2><div class="f-meta"><span>' + modulPunkt(t) + '</span>' + faelligChip(t) +
       (t.prioritaet === 'Hoch' ? '<span class="h-chip rot">Hoch</span>' : '') + '</div>';
     if ((t.unteraufgaben || []).length) h += '<div class="f-unter">' + t.unteraufgaben.map(function (s, i) {
       return '<div class="sub' + (s.erledigt ? ' ok' : '') + '" data-sub-karte="' + esc(t.id) + '|' + i + '"><span class="sub-kreis"></span><span>' + esc(s.titel) + '</span></div>';
@@ -777,7 +778,7 @@ function starteApp() {
     h += '<div class="f-knoepfe"><button class="btn" data-fokus-spaeter="' + esc(t.id) + '">Später</button>' +
       '<button class="btn btn-primary" data-status="' + esc(t.id) + '">Erledigt</button></div></div>';
     if (reihe.length > 1) h += '<details class="f-danach"><summary>Danach noch ' + (reihe.length - 1) + '</summary>' + reihe.slice(1).map(function (x) {
-      return '<div class="f-mini h-glas" data-karte="' + esc(x.id) + '"><span class="mod-punkt" style="background:' + modulFarbe(x.modul_id) + '"></span><span class="h-titel">' + esc(x.titel) + '</span>' + faelligChip(x) + '</div>';
+      return '<div class="f-mini h-glas" data-karte="' + esc(x.id) + '"><span class="mod-punkt" style="background:' + modulFarbe(x.modul_id) + '"></span><span class="h-titel">' + esc(titelText(x)) + '</span>' + faelligChip(x) + '</div>';
     }).join('') + '</details>';
     return h + '</div>';
   }
@@ -956,9 +957,9 @@ function starteApp() {
           (liste.length ? '<span class="anz">' + liste.length + '</span>' : '') +
           liste.slice(0, 3).map(function (t) {
             const farbe = istFertig(t) ? '#3E9C5C' : (istUeberfaellig(t, heute) ? '#D93A3F' : modulFarbe(t.modul_id));
-            return '<span class="eintrag' + (istFertig(t) ? ' ok' : '') + '" title="' + esc(t.titel) + '">' +
+            return '<span class="eintrag' + (istFertig(t) ? ' ok' : '') + '" title="' + esc(titelText(t)) + '">' +
               '<span class="mod-punkt" style="background:' + farbe + '"></span>' +
-              '<span class="txt">' + esc(t.titel) + '</span></span>';
+              '<span class="txt">' + esc(titelText(t)) + '</span></span>';
           }).join('') +
           (liste.length > 3 ? '<span class="mehr">+' + (liste.length - 3) + ' weitere</span>' : '') +
           '</button>';
@@ -1539,9 +1540,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 23.3;
+  const VERSION = 23.4;
   const NEUIGKEITEN = [
-    ['⚡', 'Flüssiger und akkuschonender', 'Glas-Unschärfe wird nur noch dort berechnet, wo sie sichtbar ist (Leisten, Fenster). Das Scrollen und der Hintergrund laufen jetzt viel flüssiger.']
+    ['🧩', 'Robuster bei langen Texten', 'Lange Titel, Modulnamen und Links werden jetzt sauber mit Silbentrennung umgebrochen statt abgeschnitten oder aus dem Bildschirm geschoben.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

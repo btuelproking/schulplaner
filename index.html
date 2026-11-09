@@ -209,7 +209,8 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
   background:var(--done) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.4l2.6 2.6L12 5.4' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/15px no-repeat;
   box-shadow:0 2px 8px rgba(47,185,86,.35);
 }
-.karte-titel{font-weight:650;font-size:16px;flex:1;min-width:0;word-break:break-word;letter-spacing:-.1px}
+.meta > span{min-width:0;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
+.karte-titel{font-weight:650;font-size:16px;flex:1;min-width:0;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto;letter-spacing:-.1px}
 .karte.fertig .karte-titel{text-decoration:line-through;color:var(--muted2);font-weight:550}
 .chip{
   font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid;white-space:nowrap;
@@ -225,6 +226,8 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .unterliste{margin:9px 0 0 36px;font-size:14px}
 .unterliste > div{padding:3px 0}
 .unterliste .sub{display:flex;align-items:center;gap:9px;cursor:pointer;width:fit-content;max-width:100%}
+.sub > span:last-child{min-width:0;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
+.sub-kreis{flex-shrink:0}
 .sub-kreis{width:18px;height:18px;flex:0 0 18px;border-radius:50%;border:1.7px solid #ADADB7;background:rgba(255,255,255,.75);transition:transform 140ms var(--ease-out)}
 .sub:active .sub-kreis{transform:scale(.85)}
 .sub.ok .sub-kreis{
@@ -264,7 +267,7 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .modul-karte{border-radius:var(--r);overflow:hidden;cursor:pointer;text-align:left;padding:0;width:100%}
 .modul-karte .strich{height:5px;opacity:.9}
 .modul-karte .inhalt{padding:15px 18px 16px}
-.modul-karte h3{margin:0;font-size:17px;font-weight:650}
+.modul-karte h3{margin:0;font-size:17px;font-weight:650;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
 .modul-karte p{margin:5px 0 0;font-size:13px;color:var(--muted)}
 .modul-karte .warn{color:var(--danger);font-weight:650}
 .modul-karte .balken{margin-left:0;margin-top:12px}
@@ -576,8 +579,9 @@ select option{background:#FFFFFF;color:#1D1D1F}
    Heute-Seite: Widgets, Zeitleiste, Fokus + Auswahl
    ========================================================= */
 .h-glas{border:1px solid var(--kante);box-shadow:var(--licht),var(--schatten)}
-.h-titel{font-weight:650;font-size:15.5px;word-break:break-word}
-.h-u{font-size:12.5px;color:var(--muted);margin-top:2px}
+.h-titel{font-weight:650;font-size:15.5px;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
+.w-zeile > div,.f-mini .h-titel{min-width:0;flex:1}
+.h-u{font-size:12.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
 .h-chip{margin-left:auto;font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap;flex:0 0 auto}
 .h-chip.rot{background:rgba(255,59,48,.13);color:#D8322A}
 .h-chip.blau{background:rgba(10,122,255,.12);color:var(--accent)}
@@ -589,7 +593,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
 .w{border-radius:var(--r-gross);padding:16px;min-height:150px;min-width:0}
 .w.breit{grid-column:span 2;min-height:0}
 .w h3{margin:0 0 8px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:700}
-.w-abgabe .t{font-size:17px;font-weight:700;line-height:1.25;margin-bottom:6px;word-break:break-word}
+.w-abgabe .t{font-size:17px;font-weight:700;line-height:1.25;margin-bottom:6px;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
 .w-zeit{font-size:30px;font-weight:800;letter-spacing:-1px;color:var(--accent);line-height:1.15}
 .w-abgabe small{color:var(--muted)}
 .w-mitte{text-align:center}
@@ -634,7 +638,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
 .f-karte.rein{animation:f-rein 260ms var(--ease-out)}
 @keyframes f-rein{from{opacity:0;transform:translateX(24px) scale(.97)}to{opacity:1;transform:none}}
 .f-label{font-size:12.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
-.f-karte h2{margin:8px 0 6px;font-size:28px;letter-spacing:-.6px;line-height:1.15;word-break:break-word}
+.f-karte h2{margin:8px 0 6px;font-size:28px;letter-spacing:-.6px;line-height:1.15;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
 .f-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:var(--muted);font-weight:600}
 .f-meta .h-chip{margin-left:0}
 .f-unter{margin:14px 0 2px;display:flex;flex-direction:column;gap:6px}
@@ -738,7 +742,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
   <div class="dlg-koerper">
     <div class="feld">
       <label for="fTitel">Titel</label>
-      <input id="fTitel" type="text" placeholder="z. B. Deutsch Aufsatz schreiben">
+      <input id="fTitel" type="text" maxlength="200" placeholder="z. B. Deutsch Aufsatz schreiben">
     </div>
     <div class="zeile">
       <div class="feld"><label for="fModul">Modul</label><select id="fModul"></select></div>
@@ -779,7 +783,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
 
 <dialog id="dlgModul">
   <div class="dlg-koerper">
-    <div class="feld"><label for="mName">Name des Moduls</label><input id="mName" type="text" placeholder="z. B. Geschichte"></div>
+    <div class="feld"><label for="mName">Name des Moduls</label><input id="mName" type="text" maxlength="60" placeholder="z. B. Geschichte"></div>
     <div class="feld"><label>Farbe</label><div id="mFarben" style="display:flex;gap:8px;flex-wrap:wrap"></div></div>
   </div>
   <div class="dlg-fuss">
