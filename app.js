@@ -1285,9 +1285,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 19;
+  const VERSION = 20;
   const NEUIGKEITEN = [
-    ['🔒', 'Sicherheits-Update', 'Eine Lücke ist geschlossen: Eine manipulierte Sicherungsdatei konnte beim Einlesen fremden Code in der App ausführen. Jetzt werden solche Daten sicher behandelt.']
+    ['👆', 'Leichter zu treffen', 'Am iPhone und iPad sind alle Knöpfe jetzt mindestens so groß wie eine Fingerkuppe – auch der kleine Abhak-Kreis lässt sich leichter antippen.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');

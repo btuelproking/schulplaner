@@ -788,6 +788,11 @@ html.nb-offen #kiKnopf,html.nb-offen #kiPanel{display:none}
   #kiPanel{left:0;right:0;top:0;bottom:0;width:auto;border-radius:0;border:0;transform:translateY(100%)}
   .ki-kopf{padding-top:calc(12px + env(safe-area-inset-top))}
 }
+@media (pointer:coarse){
+  .ki-kopfknopf,.ki-bildknopf{width:44px;height:44px;flex-basis:44px;padding:11px}
+  .ki-senden,.ki-stopp{width:44px;height:44px;flex:0 0 44px;padding:10px}
+  .btn.ki-kopf-start{width:44px;height:44px;flex-basis:44px}
+}
 @media (prefers-reduced-motion: reduce){#kiPanel{transition:none}.ki-tippt span{animation:none}.ki-neu{animation:ki-blende 160ms ease-out}}
 @keyframes ki-blende{from{opacity:0}to{opacity:1}}
 `;
