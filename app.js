@@ -783,11 +783,23 @@ function starteApp() {
   }
 
   /* ---------- Auswahl beim ersten Start und in den Einstellungen ---------- */
+  /* Mini-Ansicht jedes Designs mit seinen typischen Bausteinen, damit man sieht, was man bekommt */
   function stilVorschau(id) {
-    if (id === 'widgets') return '<i class="v-w"></i><i class="v-w"></i><i class="v-b"></i><i class="v-w"></i><i class="v-w"></i>';
-    if (id === 'zeitleiste') return '<i class="v-streifen"></i><i class="v-z"></i><i class="v-z"></i><i class="v-z"></i>';
-    if (id === 'fokus') return '<i class="v-f"></i><i class="v-l"></i>';
-    return '<i class="v-k"></i><i class="v-k"></i><i class="v-l"></i><i class="v-l"></i><i class="v-l"></i>';
+    const zeile = function (farbe, fertig) { return '<span class="vz"><em class="' + (fertig ? 'ok' : '') + '"></em><u></u><s style="background:' + farbe + '"></s></span>'; };
+    if (id === 'widgets') return '<span class="vw-raster">' +
+      '<span class="vw-kachel"><u class="kurz"></u><b class="blau">morgen</b></span>' +
+      '<span class="vw-kachel vw-mitte"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="13" fill="none" stroke="rgba(127,127,150,.25)" stroke-width="5"/><circle cx="18" cy="18" r="13" fill="none" stroke="#2FB956" stroke-width="5" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="35" transform="rotate(-90 18 18)"/></svg></span>' +
+      '<span class="vw-kachel vw-breit">' + zeile('#AF52DE') + zeile('#FF9500', true) + '</span>' +
+      '<span class="vw-kachel"><b class="rot">1</b></span><span class="vw-kachel"><b>2</b></span></span>';
+    if (id === 'zeitleiste') {
+      let tage = '';
+      for (let i = 0; i < 7; i++) tage += '<span class="vt-tag' + (i === 0 ? ' aktiv' : '') + '"></span>';
+      return '<span class="vt-woche">' + tage + '</span><span class="vt-strahl">' +
+        ['#2FB956', '#AF52DE', '#FF9500', '#2F6FEB'].map(function (f) { return '<span class="vt-karte"><i style="background:' + f + '"></i><u></u></span>'; }).join('') + '</span>';
+    }
+    if (id === 'fokus') return '<span class="vf-balken"><i></i></span><span class="vf-karte"><u class="kurz"></u><u class="dick"></u><u class="dick halb"></u>' +
+      '<span class="vf-knoepfe"><i></i><i class="blau"></i></span></span><span class="vf-danach"><u></u></span>';
+    return '<span class="vk-stats"><b class="blau">3</b><b class="rot">1</b><b>5</b><b class="gruen">2</b></span>' + zeile('#2F6FEB') + zeile('#FF9500') + zeile('#AF52DE', true);
   }
   function stilWahlHTML(aktuell) {
     return '<div class="stil-wahl">' + HEUTE_STILE.map(function (s) {
@@ -1475,9 +1487,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 22;
+  const VERSION = 23;
   const NEUIGKEITEN = [
-    ['🎨', 'Wähle deine Heute-Seite', 'Neu: Widgets, Zeitleiste oder Fokus – oder weiter Klassisch. Gleich nach diesem Fenster kannst du wählen, später jederzeit unter Einstellungen → Heute-Ansicht.']
+    ['🖼️', 'Bessere Design-Vorschau', 'Bei der Wahl der Heute-Seite zeigt jetzt jede Kachel eine echte Mini-Ansicht des Designs. Zu finden unter Einstellungen → Heute-Ansicht.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
