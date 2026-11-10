@@ -207,6 +207,16 @@ function starteApp() {
     try { sessionStorage.removeItem('schulplaner.neuladen'); } catch (e) { }
   }
 
+  /* Bedienungstour: Die Einladung ist nur für wirklich neue Nutzer. Wer schon Daten von früher auf dem Gerät hat,
+     bekommt sie beim Update nicht. Der Status hängt weder an der App-Version noch am Cache. */
+  try {
+    if (!localStorage.getItem('schulplaner.tour')) {
+      let schonDa = false;
+      for (let i = 0; i < localStorage.length; i++) { if (String(localStorage.key(i)).indexOf('schulplaner') === 0) schonDa = true; }
+      localStorage.setItem('schulplaner.tour', schonDa ? 'bestand' : 'offen');
+    }
+  } catch (e) { /* ohne Speicher gibt es keine Einladung */ }
+
   let daten = { module: [], aufgaben: [] };
   let cfg = { url: '', key: '', code: '' };
   let ansicht = 'heute';
@@ -218,6 +228,8 @@ function starteApp() {
   let syncLaeuft = false, syncTimer = null, letzterSync = null, syncText = '', syncKlasse = 'grau';
   let dlgState = null, modulState = null;
   let geradeErledigt = null;                     // Aufgabe, die eben abgehakt wurde (für die kurze Bestätigungs-Animation)
+  let demo = null;                               // Beispieldaten der Bedienungstour – ersetzen nur die Anzeige, nie die echten Daten
+  let tour = null;                               // laufende Bedienungstour
 
   const $ = function (s) { return document.querySelector(s); };
   const esc = function (s) {
@@ -397,28 +409,30 @@ function starteApp() {
   }
 
   /* ---------- Datenzugriff ---------- */
-  function module() { return aktiv(daten.module); }
-  function aufgaben() { return aktiv(daten.aufgaben); }
+  function module() { return aktiv((demo || daten).module); }
+  function aufgaben() { return aktiv((demo || daten).aufgaben); }
   function modulVon(id) {
-    const m = daten.module.filter(function (x) { return x.id === id; })[0];
+    const m = (demo || daten).module.filter(function (x) { return x.id === id; })[0];
     return m && !m.geloescht ? m : null;
   }
   function modulName(id) { const m = modulVon(id); return m ? m.name : 'Ohne Modul'; }
   /* Farben stammen auch aus importierten oder abgeglichenen Daten: nur echte Farbcodes in style-Attribute lassen */
   function farbeSicher(f) { return /^#[0-9a-f]{3,8}$/i.test(String(f || '')) ? f : '#9A9AA2'; }
   function modulFarbe(id) { const m = modulVon(id); return m ? farbeSicher(m.farbe) : '#9A9AA2'; }
-  function aufgabeVon(id) { return daten.aufgaben.filter(function (t) { return t.id === id; })[0]; }
+  function aufgabeVon(id) { return (demo || daten).aufgaben.filter(function (t) { return t.id === id; })[0]; }
   function aufgabenAn(iso) { return aufgaben().filter(function (t) { return t.deadline === iso; }); }
 
+  // Schreiben geht immer in die echten Daten – auch während die Tour Beispieldaten anzeigt
+  function aufgabeEcht(id) { return daten.aufgaben.filter(function (t) { return t.id === id; })[0]; }
   function speichereAufgabe(obj) {
     obj.geaendert = jetztISO();
-    const vorhanden = aufgabeVon(obj.id);
+    const vorhanden = aufgabeEcht(obj.id);
     if (vorhanden) Object.assign(vorhanden, obj);
     else daten.aufgaben.push(Object.assign({ geloescht: false }, obj));
     geaendert();
   }
   function loescheAufgabe(id) {
-    const t = aufgabeVon(id);
+    const t = aufgabeEcht(id);
     if (!t) return;
     t.geloescht = true; t.geaendert = jetztISO();
     geaendert();
@@ -1122,6 +1136,7 @@ function starteApp() {
   function designWahlZeigen() {
     let dlg = document.getElementById('dlgStil');
     if (!dlg) {
+      neuDlgStil();
       dlg = document.createElement('dialog');
       dlg.id = 'dlgStil'; dlg.className = 'neu-dlg stil-dlg';
       document.body.appendChild(dlg);
@@ -1132,7 +1147,7 @@ function starteApp() {
     if (!dlg.open) dlg.showModal();
   }
   function designWahlPruefen() {
-    if (heuteStil() || document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return;
+    if (tour || heuteStil() || document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return;
     designWahlZeigen();
   }
 
@@ -1371,6 +1386,9 @@ function starteApp() {
       '<div class="hinweis ok" style="margin-top:12px">' + (mc.url ? 'Kalender-Link gespeichert' + (mc.zuletzt ? ' · zuletzt abgeglichen ' + esc(menschDatum(mc.zuletzt.slice(0, 10))) : '') : 'Noch nicht verbunden') + '</div></div>';
 
     h += '<div class="box"><h3>Heute-Ansicht</h3><p>Wähle, wie deine Heute-Seite aussieht.</p>' + stilWahlHTML(heuteStil() || 'klassisch') + '</div>';
+
+    h += '<div class="box"><h3>Bedienungshilfe</h3><p>Die Tour zeigt dir SchulPlaner in rund 30 Sekunden – mit Beispielen, an deinen Aufgaben und Notizen ändert sich nichts.</p>' +
+      '<button class="btn" data-tour-start="1">Tour erneut ansehen</button></div>';
 
     h += '<div class="box"><h3>Version</h3><p>SchulPlaner Version ' + VERSION + '.</p>' +
       '<button class="btn" data-neuigkeiten="1">Was ist neu?</button></div>';
@@ -1691,6 +1709,7 @@ function starteApp() {
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
       if (ziel('data-export')) { exportiere(); return; }
       if (ziel('data-neuigkeiten')) { neuigkeitenZeigen(); return; }
+      if (ziel('data-tour-start')) { tourStarten(); return; }
       if (ziel('data-import')) { $('#importDatei').click(); return; }
       if ((el = ziel('data-farbe'))) { modulState.farbe = el.getAttribute('data-farbe'); zeichneFarben(); return; }
       if ((el = ziel('data-sub-weg'))) {
@@ -1782,6 +1801,805 @@ function starteApp() {
     }
   }
 
+  /* ============================================================
+     Bedienungstour (optional)
+     Zeigt die echte Oberfläche in fünf kurzen Szenen. Sie läuft nur mit Beispieldaten (demo):
+     es wird nichts gespeichert, kein Notizbuch angelegt und keine KI-Anfrage gesendet.
+     Bewegungsidee: EINE Hervorhebung führt den Blick zum nächsten Ziel; steht sie, erscheint der Satz dazu.
+     ============================================================ */
+  const TOUR_KEY = 'schulplaner.tour';            // 'offen' | 'eingeladen' | 'bestand' – unabhängig von VERSION und Cache
+  const TOUR_SZENEN = [
+    ['Heute', 'Heute zeigt dir sofort, was als Nächstes fällig ist.'],
+    ['Aufgaben', 'Mit dem Plus legst du eine Aufgabe an und ordnest sie einem Fach zu.'],
+    ['Kalender', 'Im Kalender siehst du jede Abgabe – ein Tipp auf den Tag zeigt die Aufgabe.'],
+    ['Notizbücher', 'In Notizbüchern schreibst du mit dem Stift wie auf Papier.'],
+    ['KI-Assistent', 'Der KI-Assistent beantwortet Lernfragen und trägt Aufgaben für dich ein.']
+  ];
+  const TOUR_STOPP = {};                           // Signal: Szene wurde abgebrochen (Weiter, Überspringen)
+  const TOUR_GLEITEN = 'cubic-bezier(.32,.72,0,1)';   // dieselbe Kurve wie die Tab-Linse: zügig los, weich abbremsen
+  const TOUR_AUS = 'cubic-bezier(.23,1,.32,1)';       // = --ease-out
+
+  function tourStatus() { try { return localStorage.getItem(TOUR_KEY); } catch (e) { return null; } }
+  function tourStatusSetzen(s) {
+    try { localStorage.setItem(TOUR_KEY, s); return localStorage.getItem(TOUR_KEY) === s; } catch (e) { return false; }
+  }
+
+  /* ---------- Einmalige Einladung ---------- */
+  function tourEinladungPruefen() {
+    if (tourStatus() !== 'offen') return false;
+    if (tour || document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return false;
+    // Schon beim Anzeigen merken – lässt sich nichts merken, lieber gar nicht zeigen als bei jedem Start.
+    if (!tourStatusSetzen('eingeladen')) return false;
+    try { localStorage.setItem('schulplaner.version', String(VERSION)); } catch (e) { }   // Neulinge brauchen kein „Was ist neu?“
+    tourEinladungZeigen();
+    return true;
+  }
+  function tourEinladungZeigen() {
+    neuDlgStil(); tourStil();
+    let dlg = document.getElementById('dlgTour');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'dlgTour'; dlg.className = 'neu-dlg tour-dlg';
+      dlg.setAttribute('aria-labelledby', 'tourTitel');
+      document.body.appendChild(dlg);
+      dlg.addEventListener('click', function (e) {
+        if (e.target.closest('[data-tour-ja]')) { dlg.close(); tourStarten({ danach: designWahlPruefen }); }
+        else if (e.target.closest('[data-tour-nein]')) { dlg.close(); setTimeout(designWahlPruefen, 250); }
+      });
+      dlg.addEventListener('cancel', function () { setTimeout(designWahlPruefen, 250); });   // Esc = überspringen
+    }
+    const nav = function (id) { return NAV.filter(function (n) { return n.id === id; })[0].icon; };
+    const bild = function (pfad, klasse) {
+      return '<span class="tour-kachel ' + klasse + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        pfad.split(' M').map(function (p, i) { return '<path d="' + (i ? 'M' + p : p) + '"/>'; }).join('') + '</svg></span>';
+    };
+    dlg.innerHTML = '<div class="dlg-koerper">' +
+      '<div class="tour-kacheln" aria-hidden="true">' + bild(nav('heute'), '') + bild(nav('kalender'), '') + bild('M12 5v14 M5 12h14', 'mitte') +
+      bild(nav('notizen'), '') + bild('M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z', '') + '</div>' +
+      '<h2 id="tourTitel">Willkommen bei SchulPlaner</h2>' +
+      '<p class="tour-dlg-text">Lerne SchulPlaner in rund 30 Sekunden kennen. Du kannst die Tour auch später unter Einstellungen → Bedienungshilfe ansehen.</p></div>' +
+      '<div class="dlg-fuss"><button class="btn" data-tour-nein="1">Überspringen</button>' +
+      '<button class="btn btn-primary" data-tour-ja="1">Tour ansehen</button></div>';
+    if (!dlg.open) dlg.showModal();
+    const ja = dlg.querySelector('[data-tour-ja]');
+    if (ja) ja.blur();                                // kein Fokusrahmen beim Öffnen
+  }
+
+  /* ---------- Stil (hier in app.js, damit er immer zum Tour-Code passt) ---------- */
+  function tourStil() {
+    if (document.getElementById('tourStil')) return;
+    const st = document.createElement('style');
+    st.id = 'tourStil';
+    st.textContent = [
+      ':root{--tour-schleier:rgba(16,20,46,.5)}',
+      ':root[data-thema="dunkel"]{--tour-schleier:rgba(0,0,0,.6)}',
+      /* Einladung */
+      '.tour-dlg .dlg-koerper{text-align:center;padding-top:28px}',
+      '.tour-dlg h2{margin:16px 0 6px;font-size:23px;text-wrap:balance}',
+      '.tour-dlg-text{margin:0 auto 6px;max-width:330px;color:var(--muted);font-size:14.5px;line-height:1.45;text-wrap:pretty}',
+      '.tour-kacheln{display:flex;justify-content:center;align-items:center;gap:8px}',
+      '.tour-kachel{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;color:var(--accent);background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.16)}',
+      '.tour-kachel svg{width:22px;height:22px}',
+      '.tour-kachel.mitte{width:56px;height:56px;border-radius:18px;color:var(--akzent-text,#fff);border:0;background:linear-gradient(180deg,var(--accent-hell),var(--accent) 55%,var(--accent-tief));box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 8px 20px rgba(var(--accent-rgb),.35)}',
+      '.tour-kachel.mitte svg{width:26px;height:26px}',
+      /* Ebenen: Schild (fängt Eingaben ab) < Requisiten < Hervorhebung < Karte */
+      '.tour-schild{position:fixed;inset:0;z-index:1990;touch-action:none;background:transparent}',
+      '.tour-loch{position:fixed;left:0;top:0;z-index:2000;pointer-events:none;box-sizing:border-box;' +
+        'box-shadow:0 0 0 2px var(--accent),0 0 0 7px rgba(var(--accent-rgb),.22),0 0 0 200vmax var(--tour-schleier)}',
+      '.tour-loch::after{content:"";position:absolute;inset:-4px;border-radius:inherit;opacity:0;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.65),0 0 34px 8px rgba(var(--accent-rgb),.55)}',
+      '.tour-loch.leuchtet::after{animation:tour-leuchten 1100ms ' + TOUR_AUS + ' both}',
+      '@keyframes tour-leuchten{0%{opacity:0}30%{opacity:1}100%{opacity:0}}',
+      '.tour-ebene.geht{opacity:0;transition:opacity 180ms ease-out;pointer-events:none}',
+      '.tour-ebene.geht .tour-schild,.tour-ebene.geht .tour-karte{pointer-events:none}',
+      /* Karte mit Satz und Steuerung – „Tour überspringen“ steht unten rechts */
+      '.tour-karte{position:fixed;z-index:2010;left:10px;right:10px;bottom:calc(92px + env(safe-area-inset-bottom));padding:13px 16px 10px;border-radius:22px;' +
+        'border:1px solid var(--kante);color:var(--text);background:#FAFBFF;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 44px rgba(15,20,50,.32);' +
+        'touch-action:none;outline:none;-webkit-user-select:none;user-select:none;animation:tour-blende 200ms ease-out both}',
+      ':root[data-thema="dunkel"] .tour-karte{background:#1E2036;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 18px 44px rgba(0,0,0,.6)}',
+      '@media (min-width:561px){.tour-karte{left:auto;width:400px}}',
+      '@media (min-width:881px){.tour-karte{right:28px;bottom:100px}}',
+      '@keyframes tour-blende{from{opacity:0}to{opacity:1}}',
+      '.tour-kopf{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--muted)}',
+      '.tour-zahl{color:var(--accent);font-variant-numeric:tabular-nums}',
+      '.tour-punkte{margin-left:auto;display:flex;gap:4px}',
+      '.tour-punkte i{width:16px;height:4px;border-radius:2px;background:rgba(127,127,140,.3);transition:background-color 200ms ease}',
+      '.tour-punkte i.an{background:var(--accent)}',
+      '.tour-texte{display:grid;margin:7px 0 10px}',
+      '.tour-texte p{grid-area:1/1;margin:0;font-size:16px;line-height:1.4;font-weight:600;letter-spacing:-.005em;text-wrap:balance;opacity:0;transition:opacity 150ms ease-out}',
+      '.tour-texte p.an{opacity:1;transition:opacity 260ms ' + TOUR_AUS + '}',
+      '.tour-knoepfe{display:flex;flex-wrap:wrap;align-items:center;gap:6px}',
+      '.tour-knoepfe .btn{min-height:38px;padding:8px 13px;font-size:14px}',
+      '.tour-knoepfe [data-tour-pause]{min-width:100px;justify-content:center}',
+      '.tour-knoepfe [hidden]{display:none}',
+      '.tour-skip{margin-left:auto;min-height:38px;padding:8px 2px 8px 6px;border:0;background:none;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;white-space:nowrap;cursor:pointer;border-radius:10px;text-decoration:underline;text-decoration-color:rgba(127,127,140,.45);text-underline-offset:3px}',
+      '.tour-skip:active{opacity:.6}',
+      '.tour-skip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}',
+      '@media (hover:hover) and (pointer:fine){.tour-skip:hover{color:var(--text)}}',
+      '@media (pointer:coarse){.tour-knoepfe .btn,.tour-skip{min-height:44px}}',
+      /* sehr schmale Handys: Pause/Fortsetzen als Symbol, damit alles in einer Zeile bleibt und die Karte niedrig */
+      '@media (max-width:359px){.tour-knoepfe [data-tour-pause]{min-width:0;width:44px;padding:0;font-size:0}' +
+        '.tour-knoepfe [data-tour-pause]::before{content:"❚❚";font-size:11px;letter-spacing:1px}.tour-knoepfe [data-tour-pause].laeuft-nicht::before{content:"▶";font-size:13px;letter-spacing:0}' +
+        '.tour-texte p{font-size:15px}.tour-karte{padding:11px 13px 8px}}',
+      /* Requisiten (Beispiele) – liegen unter der Hervorhebung, über der App */
+      '.tour-req{position:fixed;z-index:1995;pointer-events:none}',
+      '@keyframes tour-req-auf{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}',
+      'dialog#dlgAufgabe.tour-demo{position:fixed;inset:auto;margin:0;z-index:1995;max-width:none;height:auto;max-height:none;border-radius:26px;border:1px solid var(--kante);' +
+        'pointer-events:none;overflow:hidden;animation:tour-req-auf 300ms ' + TOUR_AUS + ' both}',
+      /* Beispiel-Formular ohne Weichzeichner und der wandernde Hintergrund ruht: so bleibt die Tour auch auf schwachen Geräten flüssig */
+      'dialog#dlgAufgabe.tour-demo{-webkit-backdrop-filter:none;backdrop-filter:none;background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0) 40%),#F4F5FB}',
+      ':root[data-thema="dunkel"] dialog#dlgAufgabe.tour-demo{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 40%),#1B1D31}',
+      'html.tour-laeuft .tapete,html.tour-laeuft .tapete::before,html.tour-laeuft .tapete::after{animation-play-state:paused}',
+      '#dlgAufgabe.tour-demo .dlg-koerper{max-height:var(--tour-dlg-h,300px);overflow:hidden;padding-top:22px;-webkit-mask-image:linear-gradient(#000 72%,transparent);mask-image:linear-gradient(#000 72%,transparent)}',
+      '#dlgAufgabe.tour-demo .dlg-fuss{display:none}',
+      '#dlgAufgabe.tour-demo #fTitel{caret-color:transparent}',
+      '.tour-blatt{border-radius:16px;overflow:hidden;background:#FDFDFB;color:#1C1C2A;box-shadow:0 24px 60px rgba(15,20,50,.38),0 0 0 1px rgba(20,25,60,.08);display:flex;flex-direction:column;animation:tour-req-auf 320ms ' + TOUR_AUS + ' both}',
+      '.tour-blatt-kopf{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(20,25,60,.08);background:#F3F4F8;font-size:13px;font-weight:600}',
+      '.tour-blatt-kopf small{font-weight:500;color:#6B6F80;margin-left:2px}',
+      '.tour-wz{margin-left:auto;display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(20,25,60,.06)}',
+      '.tour-wz span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#5A5F72}',
+      '.tour-wz span.an{background:var(--accent);color:var(--akzent-text,#fff)}',
+      '.tour-wz svg{width:16px;height:16px}',
+      '.tour-papier{flex:1;position:relative;background-image:repeating-linear-gradient(#FDFDFB 0 33px,#D5DEF0 33px 34px);background-position:0 20px}',
+      '.tour-papier svg{position:absolute;left:8%;top:14%;width:84%;height:auto;overflow:visible}',
+      '.tour-strich{fill:none;stroke:var(--tour-tinte,#2457D6);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1}',
+      '.tour-chat{border-radius:24px;overflow:hidden;border:1px solid var(--kante);color:var(--text);background:#F8F9FD;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 24px 60px rgba(15,20,50,.36);animation:tour-req-auf 300ms ' + TOUR_AUS + ' both}',
+      ':root[data-thema="dunkel"] .tour-chat{background:#1C1E32;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 24px 60px rgba(0,0,0,.6)}',
+      '.tour-chat-kopf{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--kante)}',
+      '.tour-chat-kopf b{display:block;font-size:15px}',
+      '.tour-chat-kopf small{display:block;font-size:12px;color:var(--muted)}',
+      '.tour-chat-liste{display:flex;flex-direction:column;gap:10px;padding:14px}',
+      '.tour-chat-liste .ki-msg{opacity:0;transform:translateY(8px);transition:opacity 240ms ' + TOUR_AUS + ',transform 240ms ' + TOUR_AUS + '}',
+      '.tour-chat-liste .ki-msg.da{opacity:1;transform:none}',
+      '.tour-versteckt > :not(.tour-gitter){display:none!important}',
+      /* Während der Tour: Platz zum Rollen unter der Karte, Auftakt der Heute-Ansicht */
+      'html.tour-laeuft #content .seite::after{content:"";display:block;height:260px}',
+      'html.tour-auftritt #content .seite > *{animation:tour-auf 560ms ' + TOUR_AUS + ' both}',
+      'html.tour-auftritt #content .seite > :nth-child(1){animation-name:tour-auf-kopf}',
+      'html.tour-auftritt #content .seite > :nth-child(2){animation-delay:90ms}',
+      'html.tour-auftritt #content .seite > :nth-child(3){animation-delay:170ms}',
+      'html.tour-auftritt #content .seite > :nth-child(4){animation-delay:240ms}',
+      'html.tour-auftritt #content .seite > :nth-child(5){animation-delay:300ms}',
+      'html.tour-auftritt #content .seite > :nth-child(6){animation-delay:350ms}',
+      'html.tour-auftritt #content .seite > :nth-child(n+7){animation-delay:390ms}',
+      '@keyframes tour-auf-kopf{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}',
+      '@keyframes tour-auf{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}',
+      'html.tour-pause .tour-ebene *,html.tour-pause .tour-loch::after,html.tour-pause #dlgAufgabe.tour-demo,html.tour-pause #content .seite > *{animation-play-state:paused!important}',
+      /* Bewegung reduzieren: nichts gleitet oder wächst, es wird nur ein- und ausgeblendet */
+      '@media (prefers-reduced-motion: reduce){' +
+        'dialog#dlgAufgabe.tour-demo,.tour-blatt,.tour-chat{animation:tour-blende 160ms ease-out both}' +
+        '.tour-chat-liste .ki-msg{transform:none;transition:opacity 160ms ease-out}' +
+        '.tour-loch.leuchtet::after{animation:none}' +
+        'html.tour-auftritt #content .seite > *{animation:none}}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
+  /* ---------- Beispieldaten (leben nur im Speicher) ---------- */
+  function tourDemoDaten() {
+    const z = jetztISO();
+    const m = function (id, name, farbe) { return { id: id, name: name, farbe: farbe, geaendert: z, geloescht: false }; };
+    const a = function (id, titel, modul, prio, status, tage) {
+      return { id: id, titel: titel, modul_id: modul, prioritaet: prio, status: status, deadline: tageDazu(heuteISO(), tage),
+        notizen: '', unteraufgaben: [], geaendert: z, geloescht: false };
+    };
+    return {
+      module: [m('tour-m1', 'Mathematik', MODUL_FARBEN[0]), m('tour-m2', 'Deutsch', MODUL_FARBEN[3]), m('tour-m3', 'Englisch', MODUL_FARBEN[4]),
+        m('tour-m4', 'Biologie', MODUL_FARBEN[2]), m('tour-m5', 'Informatik', MODUL_FARBEN[5])],
+      aufgaben: [a('tour-a1', 'Übungsblatt 4 abgeben', 'tour-m1', 'Hoch', 'In Bearbeitung', 0),
+        a('tour-a2', 'Vokabeln Unit 5 lernen', 'tour-m3', 'Mittel', STATI[0], 1),
+        a('tour-a3', 'Erörterung überarbeiten', 'tour-m2', 'Niedrig', STATI[0], 6)]
+    };
+  }
+  const TOUR_NEU = { id: 'tour-a9', titel: 'Biologie-Referat vorbereiten', modul: 'tour-m4', tage: 3 };
+  function tourNeueAufgabeDazu() {                  // die Aufgabe aus Szene 2 – taucht danach im Kalender auf
+    if (!demo || demo.aufgaben.some(function (t) { return t.id === TOUR_NEU.id; })) return;
+    demo.aufgaben.push({ id: TOUR_NEU.id, titel: TOUR_NEU.titel, modul_id: TOUR_NEU.modul, prioritaet: 'Mittel', status: STATI[0],
+      deadline: tageDazu(heuteISO(), TOUR_NEU.tage), notizen: '', unteraufgaben: [], geaendert: jetztISO(), geloescht: false });
+  }
+
+  /* ---------- Geometrie ---------- */
+  function tourMobil() { const f = $('#fabNeu'); return !!f && getComputedStyle(f).display !== 'none'; }
+  function tourSichtbar(el) { return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'; }
+  function tourRechteck(el, rand) {                 // Rechteck der Hervorhebung um ein Element (etwas Luft, passende Rundung)
+    rand = rand == null ? 6 : rand;
+    const r = el.getBoundingClientRect(), roh = getComputedStyle(el).borderTopLeftRadius || '0';
+    let rund = parseFloat(roh) || 0;
+    if (roh.indexOf('%') > 0) rund = Math.min(r.width, r.height) * rund / 100;
+    rund = Math.min(rund, Math.min(r.width, r.height) / 2);
+    return { x: r.left - rand, y: r.top - rand, b: r.width + 2 * rand, h: r.height + 2 * rand, r: rund + rand };
+  }
+  function tourVollbild() { return { x: -60, y: -60, b: window.innerWidth + 120, h: window.innerHeight + 120, r: 0 }; }
+  function tourLochStil(q) {
+    return { transform: 'translate(' + q.x.toFixed(1) + 'px,' + q.y.toFixed(1) + 'px)', width: q.b.toFixed(1) + 'px', height: q.h.toFixed(1) + 'px', borderRadius: q.r.toFixed(1) + 'px' };
+  }
+  function tourLochDirekt(q) {
+    const T = tour; if (!T) return;
+    if (T.lochAnim) { try { T.lochAnim.cancel(); } catch (e) { } T.lochAnim = null; }
+    Object.assign(T.loch.style, tourLochStil(q));
+    T.lochQ = q;
+  }
+  function tourLochJetzt() {                        // wo die Hervorhebung gerade wirklich ist (auch mitten im Flug)
+    const T = tour, r = T.loch.getBoundingClientRect();
+    return { x: r.left, y: r.top, b: r.width, h: r.height, r: parseFloat(getComputedStyle(T.loch).borderTopLeftRadius) || 0 };
+  }
+  /* Die Hervorhebung gleitet zum Ziel. Ziel ist ein Element, ein Rechteck oder eine Funktion, die eins davon liefert
+     (die Funktion wird auch nach Drehen/Größenänderung des Fensters wieder gefragt). */
+  function tourLochZu(t, ziel, dauer, kurve) {
+    const T = tour;
+    if (!T || t.ab) return Promise.reject(TOUR_STOPP);
+    const holen = typeof ziel === 'function' ? ziel : function () { return ziel; };
+    const messen = function () { const z = holen(); return !z ? null : (z.nodeType ? tourRechteck(z) : z); };
+    const nach = messen();
+    if (!nach) return Promise.resolve();
+    T.zielFn = messen;
+    const von = tourLochJetzt();
+    tourLochDirekt(nach);
+    if (T.rm || !T.loch.animate || dauer === 0) return Promise.resolve();
+    const anim = T.loch.animate([tourLochStil(von), tourLochStil(nach)], { duration: dauer || 320, easing: kurve || TOUR_GLEITEN });
+    T.lochAnim = anim;
+    if (T.pause) anim.pause();
+    return new Promise(function (ok, nein) {
+      const fertig = function () { if (T.lochAnim === anim) T.lochAnim = null; if (t.ab) nein(TOUR_STOPP); else ok(); };
+      anim.onfinish = fertig; anim.oncancel = fertig;
+    });
+  }
+  /* Wartezeit, die bei „Pause“ stehen bleibt und bei Abbruch sofort endet */
+  function tourWarte(t, ms) {
+    return new Promise(function (ok, nein) {
+      let vergangen = 0, letzt = null;
+      (function tick(z) {
+        if (t.ab) { nein(TOUR_STOPP); return; }
+        if (z != null) { if (letzt != null && !(tour && tour.pause)) vergangen += Math.min(100, z - letzt); letzt = z; }
+        if (vergangen >= ms) ok(); else requestAnimationFrame(tick);
+      })(null);
+    });
+  }
+  function tourWarteAuf(t, pruefen, maxMs) {        // z. B. bis das Ziel nach einem Ansichtswechsel wirklich sichtbar ist
+    return new Promise(function (ok, nein) {
+      const start = performance.now();
+      (function tick() {
+        if (t.ab) { nein(TOUR_STOPP); return; }
+        let w = null;
+        try { w = pruefen(); } catch (e) { }
+        if (w || performance.now() - start > (maxMs || 2500)) ok(w || null); else requestAnimationFrame(tick);
+      })();
+    });
+  }
+  function tourAnim(el, bilder, opt) {              // kleine Animation an einem Element, hält bei „Pause“ mit an
+    const T = tour;
+    if (!T || !el || !el.animate) return Promise.resolve();
+    const a = el.animate(bilder, opt);
+    T.anims.push(a);
+    if (T.pause) a.pause();
+    return new Promise(function (ok) {
+      const fertig = function () { const i = T.anims.indexOf(a); if (i >= 0) T.anims.splice(i, 1); ok(); };
+      a.onfinish = fertig; a.oncancel = fertig;
+    });
+  }
+  function tourRoller() { const c = $('#content'); return getComputedStyle(c).overflowY === 'visible' ? null : c; }
+  function tourRollPos() { const r = tourRoller(); return r ? r.scrollTop : window.scrollY; }
+  function tourRollSetzen(y) { const r = tourRoller(); if (r) r.scrollTop = y; else window.scrollTo(0, y); }
+  function tourBuehne() {                           // freier Bereich für Beispiele: über der Karte, neben der Seitenleiste
+    const T = tour, k = T.karte.getBoundingClientRect();
+    const links = tourMobil() ? 12 : Math.max(12, $('#sidebar').getBoundingClientRect().right + 16);
+    const oben = 12 + T.sicherOben, unten = k.top - 18;
+    return { x: links, y: oben, b: Math.max(200, window.innerWidth - 12 - links), h: Math.max(140, unten - oben) };
+  }
+  /* Liegt das Ziel unter der Karte oder außerhalb des Bildschirms, rollt die Seite – die Hervorhebung bleibt dabei an „mit“ haften. */
+  function tourInSicht(t, el, mit) {
+    const T = tour;
+    if (!T || !el) return Promise.resolve();
+    const r = el.getBoundingClientRect(), k = T.karte.getBoundingClientRect();
+    const oben = 12 + T.sicherOben + (tourMobil() ? 0 : $('#content').getBoundingClientRect().top);
+    const unten = (r.right > k.left - 8 && r.left < k.right + 8 ? k.top : window.innerHeight) - 20;
+    let delta = 0;
+    if (r.bottom > unten) delta = r.bottom - unten;
+    if (r.top - delta < oben) delta = r.top - oben;
+    if (Math.abs(delta) < 2) return Promise.resolve();
+    const start = tourRollPos(), dauer = T.rm ? 0 : 340;
+    const haften = function () { const m = mit && mit(); if (m) tourLochDirekt(tourRechteck(m)); };
+    if (!dauer) { tourRollSetzen(start + delta); haften(); return Promise.resolve(); }
+    return new Promise(function (ok, nein) {
+      let vergangen = 0, letzt = null;
+      (function tick(z) {
+        if (t.ab) { nein(TOUR_STOPP); return; }
+        if (z != null) { if (letzt != null && !T.pause) vergangen += Math.min(100, z - letzt); letzt = z; }
+        const p = Math.min(1, vergangen / dauer);
+        tourRollSetzen(start + delta * (1 - Math.pow(1 - p, 3)));
+        haften();
+        if (p < 1) requestAnimationFrame(tick); else ok();
+      })(null);
+    });
+  }
+
+  /* ---------- Karte: Zähler, Satz, Steuerung ---------- */
+  function tourKarteSetzen() {                      // über der Tab-Leiste (Handy) bzw. über dem KI-Knopf (Desktop)
+    const T = tour; if (!T) return;
+    let frei = 0;
+    if (tourMobil()) {
+      const s = $('#sidebar').getBoundingClientRect(), f = $('#fabNeu').getBoundingClientRect();
+      frei = window.innerHeight - Math.min(s.top, f.top) + 12;
+    } else {
+      const k = document.getElementById('kiKnopf');
+      frei = tourSichtbar(k) ? window.innerHeight - k.getBoundingClientRect().top + 16 : 24;
+    }
+    T.karte.style.bottom = Math.round(frei) + 'px';
+  }
+  function tourKopf(i) {
+    const T = tour; if (!T) return;
+    T.karte.querySelector('.tour-zahl').textContent = (i + 1) + ' von ' + TOUR_SZENEN.length;
+    T.karte.querySelector('.tour-name').textContent = '· ' + TOUR_SZENEN[i][0];
+    T.karte.querySelectorAll('.tour-punkte i').forEach(function (p, n) { p.classList.toggle('an', n <= i); });
+    const w = T.karte.querySelector('[data-tour-weiter]');
+    w.textContent = i === TOUR_SZENEN.length - 1 ? 'Fertig' : 'Weiter';
+  }
+  function tourText(i) {                            // i = null blendet den Satz aus
+    const T = tour; if (!T) return;
+    T.karte.querySelectorAll('.tour-texte p').forEach(function (p, n) {
+      p.classList.toggle('an', n === i);
+      if (n === i) p.removeAttribute('aria-hidden'); else p.setAttribute('aria-hidden', 'true');
+    });
+    if (i != null) T.textAb = performance.now();
+  }
+  function tourLesezeit(i) { return Math.max(2800, 1300 + TOUR_SZENEN[i][1].length * 48); }   // Standzeit richtet sich nach der Textlänge
+  function tourRestLesen(t, i, mindestens) {        // nach der Aktion noch so lange stehen bleiben, bis der Satz gelesen ist
+    const T = tour, schon = T ? performance.now() - T.textAb : 0;
+    return tourWarte(t, Math.max(mindestens || 1200, tourLesezeit(i) - schon));
+  }
+  function tourPauseSetzen(an) {
+    const T = tour; if (!T) return;
+    T.pause = !!an;
+    document.documentElement.classList.toggle('tour-pause', T.pause);
+    const b = T.karte.querySelector('[data-tour-pause]');
+    b.textContent = T.pause ? 'Fortsetzen' : 'Pause';
+    b.classList.toggle('laeuft-nicht', T.pause);
+    T.anims.concat(T.lochAnim ? [T.lochAnim] : []).forEach(function (a) { try { if (T.pause) a.pause(); else a.play(); } catch (e) { } });
+  }
+
+  /* ---------- Requisiten: Beispiele, die nur während einer Szene zu sehen sind ---------- */
+  function tourDialogAuf(ausgang) {                 // das echte Aufgaben-Formular, aber gesperrt und nicht modal
+    const T = tour, d = $('#dlgAufgabe'), b = tourBuehne();
+    dlgState = { id: null, subs: [] };
+    $('#fTitel').value = '';
+    fuelleAuswahl($('#fModul'), module(), '', 'Ohne Modul');
+    fuelleAuswahl($('#fPrio'), PRIOS, 'Mittel');
+    fuelleAuswahl($('#fStatus'), STATI, STATI[0]);
+    $('#fDatum').value = tageDazu(heuteISO(), TOUR_NEU.tage);
+    $('#fNotiz').value = '';
+    $('#fLoeschen').style.display = 'none';
+    zeichneUnteraufgaben();
+    auswahlAufbereiten(d);
+    const breite = Math.min(540, b.b);
+    d.classList.add('tour-demo');
+    d.inert = true;
+    d.style.setProperty('--tour-dlg-h', Math.round(Math.max(150, Math.min(318, b.h - 30))) + 'px');
+    d.style.width = breite + 'px';
+    d.style.left = Math.round(b.x + (b.b - breite) / 2) + 'px';
+    d.style.top = '0px';
+    d.show();
+    const hoehe = d.offsetHeight, oben = Math.round(b.y + Math.max(0, (b.h - hoehe) / 2));
+    d.style.top = oben + 'px';
+    if (ausgang) {                                  // wächst aus dem Plus-Knopf heraus
+      const a = ausgang.getBoundingClientRect(), l = parseFloat(d.style.left);
+      d.style.transformOrigin = Math.max(0, Math.min(100, (a.left + a.width / 2 - l) / breite * 100)).toFixed(0) + '% ' +
+        Math.max(0, Math.min(100, (a.top + a.height / 2 - oben) / hoehe * 100)).toFixed(0) + '%';
+    }
+    T.dialogAn = true;
+    try { T.karte.focus({ preventScroll: true }); } catch (e) { }
+    return { x: parseFloat(d.style.left) - 6, y: oben - 6, b: breite + 12, h: hoehe + 12, r: 32 };
+  }
+  function tourDialogZu() {
+    const T = tour, d = $('#dlgAufgabe');
+    if (!d || !d.classList.contains('tour-demo')) return;
+    try { d.getAnimations().forEach(function (a) { a.cancel(); }); } catch (e) { }
+    try { d.close(); } catch (e) { }
+    d.classList.remove('tour-demo');
+    d.inert = false;
+    d.removeAttribute('style');
+    $('#fTitel').value = '';
+    dlgState = null;
+    if (T) T.dialogAn = false;
+  }
+  function tourReq(html, klasse) {
+    const el = document.createElement('div');
+    el.className = 'tour-req ' + klasse;
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = html;
+    tour.ebene.insertBefore(el, tour.loch);
+    tour.reqs.push(el);
+    return el;
+  }
+  function tourUrsprung(el, q, ausgang) {           // Requisite wächst aus dem Element heraus, das sie ausgelöst hat
+    if (!ausgang) return;
+    const a = ausgang.getBoundingClientRect();
+    el.style.transformOrigin = Math.max(0, Math.min(100, (a.left + a.width / 2 - q.x) / q.b * 100)).toFixed(0) + '% ' +
+      Math.max(0, Math.min(100, (a.top + a.height / 2 - q.y) / q.h * 100)).toFixed(0) + '%';
+  }
+  function tourBlattAuf(ausgang) {                  // Beispielseite eines Notizbuchs (kein echtes Notizbuch, nichts wird gespeichert)
+    const b = tourBuehne();
+    const breite = Math.min(b.b, 400), hoehe = Math.min(b.h, Math.round(breite * 1.22), 470);
+    const q = { x: Math.round(b.x + (b.b - breite) / 2), y: Math.round(b.y + (b.h - hoehe) / 2), b: breite, h: hoehe };
+    const wz = function (pfad, an) { return '<span' + (an ? ' class="an"' : '') + '><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + pfad + '</svg></span>'; };
+    const el = tourReq(
+      '<div class="tour-blatt-kopf"><span>Biologie<small>· Beispielseite</small></span><div class="tour-wz">' +
+      wz('<path d="M5 9c0-3 3-5 7-5s7 2 7 5-3 5-7 5c-2 0-4 1-4 3s2 3 4 3"/>') +
+      wz('<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>', true) +
+      wz('<path d="M8 20h11"/><path d="M4.5 14.5l8-8 5 5-8 8H7z"/>') +
+      wz('<path d="M6 6h12"/><path d="M12 6v13"/>') + '</div></div>' +
+      '<div class="tour-papier"><svg viewBox="0 0 300 120"><path class="tour-strich" pathLength="1" d="' +
+      'M14 84c16-2 30-18 33-40 3-20-13-22-13 0 0 26 12 42 30 40 16-2 28-20 31-42 3-20-13-22-13 0 0 26 12 44 30 42 13-1 22-12 27-26 4-12-9-15-12-1-4 16 5 28 21 27 12-1 22-8 31-18' +
+      '"/><path class="tour-strich" pathLength="1" d="M36 106c60-9 130-11 228-5"/></svg></div>', 'tour-blatt');
+    Object.assign(el.style, { left: q.x + 'px', top: q.y + 'px', width: q.b + 'px', height: q.h + 'px' });
+    tourUrsprung(el, q, ausgang);
+    return { el: el, q: { x: q.x - 6, y: q.y - 6, b: q.b + 12, h: q.h + 12, r: 22 } };
+  }
+  function tourChatAuf(ausgang) {                   // fiktive Lernfrage – es wird nichts an die KI gesendet
+    const T = tour, b = tourBuehne(), a = ausgang ? ausgang.getBoundingClientRect() : null;
+    const funke = (document.querySelector('#kiKnopf svg, .ki-kopf-start svg') || {}).outerHTML || '';
+    const breite = Math.min(b.b, 340);
+    const el = tourReq(
+      '<div class="tour-chat-kopf">' + (funke ? '<span class="ki-logo-klein">' + funke + '</span>' : '') + '<div><b>KI-Assistent</b><small>Beispiel</small></div></div>' +
+      '<div class="tour-chat-liste"><div class="ki-msg ki-ich">Erklär mir die Fotosynthese in einem Satz.</div>' +
+      '<div class="ki-msg ki-ki">Pflanzen machen aus Licht, Wasser und CO₂ Zucker – dabei entsteht Sauerstoff.</div></div>', 'tour-chat');
+    el.style.width = breite + 'px';
+    const hoehe = el.offsetHeight, k = T.karte.getBoundingClientRect();
+    const rechts = a ? Math.min(window.innerWidth - 12, Math.max(a.right, b.x + breite)) : b.x + b.b;
+    const x = Math.round(Math.max(b.x, rechts - breite));
+    // Knopf oben (Handy): Chat darunter. Knopf unten (Desktop): Chat über der Karte.
+    const y = a && a.top < window.innerHeight / 2 ? Math.round(Math.min(a.bottom + 16, Math.max(b.y, k.top - 18 - hoehe))) : Math.round(Math.max(b.y, k.top - 18 - hoehe));
+    Object.assign(el.style, { left: x + 'px', top: y + 'px' });
+    const q = { x: x, y: y, b: breite, h: hoehe };
+    tourUrsprung(el, q, ausgang);
+    return { el: el, q: { x: x - 6, y: y - 6, b: breite + 12, h: hoehe + 12, r: 30 } };
+  }
+  function tourReqRaus(t, el) {                     // Requisite verabschiedet sich kurz und schlicht
+    const T = tour;
+    if (!T || !el) return Promise.resolve();
+    if (T.rm || !el.animate) { el.remove(); return Promise.resolve(); }
+    return tourAnim(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 170, easing: 'ease-out', fill: 'forwards' })
+      .then(function () { el.remove(); if (t.ab) throw TOUR_STOPP; });
+  }
+  function tourBuchEin() {                          // Demo-Notizbuch in die Bibliothek stellen (nur Anzeige)
+    const bib = $('#content [data-nb-bibliothek]');
+    if (!bib || bib.querySelector('.tour-buch')) return bib ? bib.querySelector('.tour-buch') : null;
+    if (!bib.firstElementChild || bib.firstElementChild.classList.contains('leer')) return null;   // Bibliothek lädt noch
+    const farbe = modulFarbe('tour-m4');
+    const karte = document.createElement('div');
+    karte.className = 'nb-buch tour-buch';
+    karte.innerHTML = '<div class="nb-cover" style="--c1:#4CD07D;--c2:#1E9A55"><div class="nb-ruecken"></div><div class="nb-glanz"></div><div class="nb-etikett">Biologie</div></div>' +
+      '<div class="nb-info"><div class="nb-titel">Biologie</div><div class="nb-meta"><span class="mod-punkt" style="background:' + farbe + '"></span>Biologie</div>' +
+      '<div class="nb-meta nb-meta2">1 Seite · Beispiel</div></div>';
+    const gitter = bib.querySelector('.nb-gitter:not(.tour-gitter)');
+    if (gitter) {
+      bib.classList.remove('tour-versteckt');
+      const neu = gitter.querySelector('.nb-neu-karte');
+      if (neu && neu.nextSibling) gitter.insertBefore(karte, neu.nextSibling); else gitter.appendChild(karte);
+    } else {                                        // noch keine Notizbücher: eigenes kleines Regal zeigen
+      const regal = document.createElement('div');
+      regal.className = 'nb-gitter tour-gitter';
+      regal.appendChild(karte);
+      bib.classList.add('tour-versteckt');
+      bib.appendChild(regal);
+    }
+    return karte;
+  }
+  function tourBuchWeg() {
+    document.querySelectorAll('.tour-buch, .tour-gitter').forEach(function (e) { e.remove(); });
+    document.querySelectorAll('.tour-versteckt').forEach(function (e) { e.classList.remove('tour-versteckt'); });
+  }
+  function tourRequisitenWeg(buchBleibt) {          // alles Szenen-Eigene sofort entfernen (auch mitten in einer Bewegung)
+    const T = tour; if (!T) return;
+    document.documentElement.classList.remove('tour-auftritt');
+    T.anims.slice().forEach(function (a) { try { a.cancel(); } catch (e) { } });
+    T.anims = [];
+    tourDialogZu();
+    T.reqs.forEach(function (e) { e.remove(); });
+    T.reqs = [];
+    if (!buchBleibt) { T.buchAn = false; tourBuchWeg(); }
+    T.loch.classList.remove('leuchtet');
+  }
+
+  /* ---------- Die fünf Szenen ---------- */
+  function tourAnsicht(id) {                        // Ansicht wechseln und oben anfangen
+    zeige(id);                                    // zeichnet auch die Beispieldaten
+    tourRollSetzen(0);
+    document.documentElement.classList.remove('leiste-klein');
+  }
+  function tourZiel(sel) { return function () { const e = document.querySelector(sel); return tourSichtbar(e) ? e : null; }; }
+  function tourNavZiel(id) { return tourZiel('#nav [data-ansicht="' + id + '"]'); }
+
+  const TOUR_ABLAUF = [
+    /* 1 · Heute: die Ansicht erscheint, die nächste fällige Aufgabe rückt in den Fokus (Auftakt) */
+    async function (t) {
+      const T = tour, ziel = tourZiel('#content [data-karte="tour-a1"], #content [data-fokus="tour-a1"]');
+      tourText(null);
+      tourLochDirekt(tourVollbild());
+      if (!T.rm) document.documentElement.classList.add('tour-auftritt');
+      tourAnsicht('heute');
+      await tourWarteAuf(t, ziel);
+      await tourInSicht(t, ziel());
+      if (!T.rm) await tourWarte(t, 700);            // erst erscheint die Ansicht …
+      await tourLochZu(t, ziel, 720, 'cubic-bezier(.77,0,.175,1)');   // … dann zieht sich der Fokus ruhig um die nächste Aufgabe zusammen
+      document.documentElement.classList.remove('tour-auftritt');
+      if (!T.rm) T.loch.classList.add('leuchtet');
+      tourText(0);
+      await tourRestLesen(t, 0, 1500);
+    },
+    /* 2 · Aufgaben und Module: am echten Plus-Knopf eine Aufgabe anlegen und einem Fach zuordnen */
+    async function (t) {
+      const T = tour;
+      const plus = function () { const f = $('#fabNeu'); return tourSichtbar(f) ? f : (tourSichtbar($('#neuBtnSeite')) ? $('#neuBtnSeite') : null); };
+      tourText(null);
+      tourAnsicht('heute');
+      await tourLochZu(t, plus);
+      tourText(1);
+      await tourWarte(t, 750);
+      if (!T.rm && plus()) await tourAnim(plus(), [{ transform: 'scale(1)' }, { transform: 'scale(.92)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' });
+      if (t.ab) throw TOUR_STOPP;
+      const q = tourDialogAuf(plus());               // Formular wächst aus dem Plus, die Hervorhebung geht mit
+      await tourLochZu(t, function () { return q; }, 340);
+      await tourWarte(t, 260);
+      const titel = $('#fTitel');
+      if (T.rm) titel.value = TOUR_NEU.titel;
+      else for (let i = 1; i <= TOUR_NEU.titel.length; i++) { titel.value = TOUR_NEU.titel.slice(0, i); await tourWarte(t, 30); }
+      await tourWarte(t, 320);
+      await tourLochZu(t, function () { const f = $('#fModul'); return f ? f.closest('.feld') : null; });
+      await tourWarte(t, 300);
+      $('#fModul').value = TOUR_NEU.modul;           // dem Fach zuordnen
+      knopfBeschriften($('#fModul'));
+      await tourRestLesen(t, 1, 1500);
+      tourNeueAufgabeDazu();
+      tourText(null);
+      if (!T.rm) await tourAnim($('#dlgAufgabe'), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 170, easing: 'ease-out', fill: 'forwards' });
+      if (t.ab) throw TOUR_STOPP;
+      tourRequisitenWeg();
+      render();
+    },
+    /* 3 · Kalender: zum markierten Abgabetermin, dann dorthin, wo die Aufgabe erscheint */
+    async function (t) {
+      const T = tour, tag = tageDazu(heuteISO(), TOUR_NEU.tage);
+      const zelle = tourZiel('#content .kal [data-tag="' + tag + '"]');
+      const karte = tourZiel('#content .tagespanel [data-karte="' + TOUR_NEU.id + '"]');
+      tourNeueAufgabeDazu();
+      tourText(null);
+      if (ansicht !== 'kalender') {
+        await tourLochZu(t, tourNavZiel('kalender'));  // erst zum Tab, dann die Ansicht wechseln
+        await tourWarte(t, 120);
+      }
+      kalDatum = vonISO(tag); kalGewaehlt = heuteISO();
+      zeige('kalender'); tourRollSetzen(0);
+      await tourWarteAuf(t, zelle);
+      if (!T.rm) await tourWarte(t, 360);            // die Tab-Linse kommt erst an
+      await tourInSicht(t, zelle());
+      await tourLochZu(t, zelle);
+      tourText(2);
+      await tourWarte(t, 1250);
+      kalGewaehlt = tag; render();                   // „Tipp“ auf den Tag: darunter erscheint die Aufgabe
+      await tourWarteAuf(t, karte);
+      await tourWarte(t, 380);
+      await tourInSicht(t, karte(), zelle);
+      await tourLochZu(t, karte);
+      await tourRestLesen(t, 2, 1700);
+    },
+    /* 4 · Notizbücher: ein Demo-Notizbuch öffnen, ein Stiftstrich entsteht */
+    async function (t) {
+      const T = tour, buch = tourZiel('#content .tour-buch .nb-cover');
+      tourText(null);
+      if (ansicht !== 'notizen') {
+        await tourLochZu(t, tourNavZiel('notizen'));
+        await tourWarte(t, 120);
+      }
+      zeige('notizen'); tourRollSetzen(0);
+      T.buchAn = true;
+      await tourWarteAuf(t, function () { return tourBuchEin(); });
+      if (!T.rm) await tourWarte(t, 360);
+      await tourInSicht(t, buch());
+      await tourLochZu(t, buch);
+      tourText(3);
+      await tourWarte(t, 950);
+      const blatt = tourBlattAuf(buch());            // die Seite wächst aus dem Notizbuch
+      await tourLochZu(t, function () { return blatt.q; }, 340);
+      await tourWarte(t, 200);
+      const striche = blatt.el.querySelectorAll('.tour-strich');   // erst das Wort, dann der Unterstrich – wie mit der Hand
+      for (let i = 0; i < striche.length; i++) {
+        if (T.rm) { striche[i].style.strokeDashoffset = '0'; continue; }
+        await tourAnim(striche[i], [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: i ? 380 : 1150, easing: 'linear', fill: 'forwards' });
+        if (t.ab) throw TOUR_STOPP;
+        await tourWarte(t, 110);
+      }
+      await tourRestLesen(t, 3, 1500);
+      tourText(null);
+      await tourReqRaus(t, blatt.el);
+    },
+    /* 5 · KI-Assistent: Einstieg hervorheben, eine fiktive Lernfrage zeigen */
+    async function (t) {
+      const T = tour;
+      const knopf = function () { const k = document.getElementById('kiKnopf'); return tourSichtbar(k) ? k : tourZiel('#content .ki-kopf-start')(); };
+      tourText(null);
+      if (!knopf()) tourAnsicht('heute');
+      tourRollSetzen(0);
+      await tourLochZu(t, knopf);
+      tourText(4);
+      await tourWarte(t, 900);
+      const chat = tourChatAuf(knopf());
+      await tourLochZu(t, function () { return chat.q; }, 340);
+      await tourWarte(t, 300);
+      chat.el.querySelector('.ki-ich').classList.add('da');
+      await tourWarte(t, 1000);
+      chat.el.querySelector('.ki-ki').classList.add('da');
+      await tourRestLesen(t, 4, 2100);
+      tourText(null);
+      await tourReqRaus(t, chat.el);
+    }
+  ];
+
+  function tourSzene(i) {
+    const T = tour; if (!T) return;
+    if (T.token) T.token.ab = true;                 // laufende Szene beenden – nie zwei gleichzeitig
+    const t = T.token = { ab: false };
+    T.i = i;
+    tourRequisitenWeg(i === 4 && ansicht === 'notizen');   // das Demo-Notizbuch bleibt im Regal, solange man es sieht
+    tourKopf(i);
+    TOUR_ABLAUF[i](t).then(function () {
+      if (t.ab || tour !== T) return;
+      if (T.rm) return;                             // Bewegung reduziert: weiter geht es nur von Hand
+      if (i + 1 < TOUR_ABLAUF.length) tourSzene(i + 1); else tourAbspann();
+    }).catch(function (e) {
+      if (e === TOUR_STOPP) return;
+      console.error(e);                             // unerwarteter Fehler: Tour sauber beenden statt hängen zu bleiben
+      if (tour === T) tourBeenden();
+    });
+  }
+  function tourWeiter() {
+    const T = tour; if (!T || T.endet) return;
+    if (T.pause) tourPauseSetzen(false);
+    if (T.i + 1 < TOUR_ABLAUF.length) tourSzene(T.i + 1); else tourAbspann();
+  }
+  function tourAbspann() {                          // sanft zurück: Ansicht wie vorher, der Fokus öffnet sich wieder
+    const T = tour; if (!T || T.endet) return;
+    if (T.token) T.token.ab = true;
+    const t = T.token = { ab: false };
+    if (T.rm) { tourBeenden(); return; }
+    T.endet = true;
+    tourText(null);
+    tourRequisitenWeg();
+    tourZustandZurueck();
+    tourAnim(T.karte, [{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
+    tourLochZu(t, tourVollbild, 460).then(function () { if (tour === T) tourBeenden(); }).catch(function () { });
+  }
+
+  /* ---------- Start und Ende ---------- */
+  function tourZustandZurueck() {                   // echte Daten und die Ausgangsansicht wieder anzeigen
+    const T = tour; if (!T || T.zurueck) return;
+    T.zurueck = true;
+    demo = null;
+    ansicht = T.vorher.ansicht; modulOffen = T.vorher.modulOffen;
+    kalDatum = T.vorher.kalDatum; kalGewaehlt = T.vorher.kalGewaehlt;
+    render();
+    const r = tourRoller();
+    if (r) r.scrollTop = T.vorher.rollC;
+    window.scrollTo(0, T.vorher.rollW);
+  }
+  function tourTaste(e) {
+    const T = tour; if (!T) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tourBeenden(); return; }
+    if (T.karte.contains(e.target)) {
+      if (e.key === 'ArrowRight') { e.preventDefault(); tourWeiter(); }
+      else if (e.key === ' ' && e.target === T.karte) { e.preventDefault(); if (!T.rm && !T.endet) tourPauseSetzen(!T.pause); }
+      else if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].indexOf(e.key) >= 0) e.preventDefault();   // die Seite darunter rollt nicht
+      e.stopPropagation();
+      return;
+    }
+    e.stopPropagation();                            // Tastenkürzel der App bleiben während der Tour aus
+    if (e.key === 'Tab') { e.preventDefault(); T.karte.querySelector('[data-tour-weiter]').focus(); }
+    else if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
+  }
+  function tourGerollt() {                          // rollt die Seite doch einmal, sitzt die Hervorhebung sofort wieder auf ihrem Ziel
+    const T = tour; if (!T || T.lochAnim || !T.zielFn) return;
+    const q = T.zielFn(); if (q) tourLochDirekt(q);
+  }
+  function tourGroesse() {
+    const T = tour; if (!T) return;
+    tourKarteSetzen();
+    if (Math.abs(window.innerWidth - T.breite) > 4) {   // gedreht oder Fenster verändert: Szene neu aufbauen
+      T.breite = window.innerWidth;
+      clearTimeout(T.groesseTimer);
+      T.groesseTimer = setTimeout(function () { if (tour === T && !T.endet) tourSzene(T.i); }, 180);
+    } else if (T.zielFn && !T.lochAnim) {
+      const q = T.zielFn(); if (q) tourLochDirekt(q);
+    }
+  }
+  function tourStarten(opt) {
+    opt = opt || {};
+    if (tour) return false;
+    if (document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return false;
+    tourStil();
+    const html = document.documentElement;
+    if (html.classList.contains('ki-offen')) { const zu = document.querySelector('#kiPanel [data-ki-zu]'); if (zu) zu.click(); }
+    listeSchliessen();
+    const rc = tourRoller();
+    const T = tour = {
+      i: 0, token: null, pause: false, endet: false, zurueck: false, anims: [], reqs: [], lochAnim: null, zielFn: null, buchAn: false, dialogAn: false,
+      rm: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches),
+      danach: opt.danach || null, breite: window.innerWidth, textAb: 0, sicherOben: 0,
+      vorher: { ansicht: ansicht, modulOffen: modulOffen, kalDatum: kalDatum, kalGewaehlt: kalGewaehlt, rollC: rc ? rc.scrollTop : 0, rollW: window.scrollY,
+        fokus: document.activeElement, ausEinstellungen: ansicht === 'einstellungen' }
+    };
+    demo = tourDemoDaten();
+
+    const ebene = T.ebene = document.createElement('div');
+    ebene.className = 'tour-ebene';
+    ebene.innerHTML = '<div class="tour-schild"></div><div class="tour-loch" aria-hidden="true"></div>' +
+      '<div class="tour-karte" role="dialog" aria-label="Bedienungstour" tabindex="-1">' +
+      '<div class="tour-kopf"><span class="tour-zahl"></span><span class="tour-name"></span><span class="tour-punkte" aria-hidden="true">' +
+      TOUR_SZENEN.map(function () { return '<i></i>'; }).join('') + '</span></div>' +
+      '<div class="tour-texte" aria-live="polite">' + TOUR_SZENEN.map(function (s) { return '<p aria-hidden="true">' + esc(s[1]) + '</p>'; }).join('') + '</div>' +
+      '<div class="tour-knoepfe"><button type="button" class="btn" data-tour-pause="1"' + (T.rm ? ' hidden' : '') + '>Pause</button>' +
+      '<button type="button" class="btn btn-primary" data-tour-weiter="1">Weiter</button>' +
+      '<button type="button" class="tour-skip" data-tour-ende="1">Tour überspringen</button></div></div>';
+    document.body.appendChild(ebene);
+    T.schild = ebene.querySelector('.tour-schild'); T.loch = ebene.querySelector('.tour-loch'); T.karte = ebene.querySelector('.tour-karte');
+    // obere sichere Zone (Notch) einmal ausmessen
+    const mess = document.createElement('div');
+    mess.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top);visibility:hidden';
+    ebene.appendChild(mess); T.sicherOben = mess.offsetHeight || 0; mess.remove();
+
+    // Die App darunter ist während der Tour gesperrt: keine Tipps, kein Fokus, keine Tastenkürzel
+    T.gesperrt = ['#app', '#fabNeu', '#kiKnopf', '#kiPanel'].map(function (s) { return document.querySelector(s); })
+      .filter(function (e) { return e && !e.inert; });
+    T.gesperrt.forEach(function (e) { e.inert = true; });
+    T.karte.addEventListener('click', function (e) {
+      if (e.target.closest('[data-tour-ende]')) tourBeenden();
+      else if (e.target.closest('[data-tour-weiter]')) tourWeiter();
+      else if (e.target.closest('[data-tour-pause]')) tourPauseSetzen(!T.pause);
+    });
+    const halt = function (e) { e.preventDefault(); };
+    [T.schild, T.karte].forEach(function (el) {
+      el.addEventListener('wheel', halt, { passive: false });
+      el.addEventListener('touchmove', halt, { passive: false });
+    });
+    window.addEventListener('scroll', tourGerollt, true);
+    window.addEventListener('keydown', tourTaste, true);
+    window.addEventListener('resize', tourGroesse);
+    // Zeichnet die App neu (z. B. nach einem Abgleich), kommt das Demo-Notizbuch wieder an seinen Platz
+    if (window.MutationObserver) {
+      T.beob = new MutationObserver(function () { if (tour === T && T.buchAn && !document.querySelector('#content .tour-buch')) tourBuchEin(); });
+      T.beob.observe($('#content'), { childList: true, subtree: true });
+    }
+    html.classList.add('tour-laeuft');
+    html.classList.remove('leiste-klein');
+    tourKarteSetzen();
+    tourLochDirekt(tourVollbild());
+    try { T.karte.focus({ preventScroll: true }); } catch (e) { }
+    tourSzene(0);
+    return true;
+  }
+  /* Ende der Tour – ob fertig oder übersprungen: Timer, Animationen und Ebenen weg, Ausgangsansicht und Fokus zurück */
+  function tourBeenden() {
+    const T = tour; if (!T) return;
+    if (T.token) T.token.ab = true;
+    clearTimeout(T.groesseTimer);
+    tourRequisitenWeg();
+    if (T.lochAnim) { try { T.lochAnim.cancel(); } catch (e) { } }
+    tourZustandZurueck();
+    if (T.beob) T.beob.disconnect();
+    window.removeEventListener('keydown', tourTaste, true);
+    window.removeEventListener('resize', tourGroesse);
+    window.removeEventListener('scroll', tourGerollt, true);
+    T.gesperrt.forEach(function (e) { e.inert = false; });
+    const html = document.documentElement;
+    html.classList.remove('tour-laeuft', 'tour-pause', 'tour-auftritt');
+    tour = null;
+    // Die App ist sofort wieder bedienbar; die Ebene blendet nur noch kurz aus
+    T.ebene.classList.add('geht');
+    setTimeout(function () { T.ebene.remove(); }, T.rm ? 0 : 200);
+    let fokus = T.vorher.ausEinstellungen ? document.querySelector('#content [data-tour-start]') : null;
+    if (!fokus && T.vorher.fokus && T.vorher.fokus.isConnected && T.vorher.fokus !== document.body) fokus = T.vorher.fokus;
+    if (fokus) { try { fokus.focus({ preventScroll: true }); } catch (e) { } }
+    else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    if (T.danach) setTimeout(T.danach, 300);
+  }
+
   /* ---------- Start ---------- */
   themaAnwenden();
   ladeLokal();
@@ -1797,7 +2615,10 @@ function starteApp() {
   if (window.Assistent) {
     try {
       window.Assistent.init({
-        aufgaben: aufgaben, module: module, modulVon: modulVon, aufgabeVon: aufgabeVon,
+        // immer die echten Daten – auch wenn die Bedienungstour gerade Beispiele anzeigt
+        aufgaben: function () { return aktiv(daten.aufgaben); }, module: function () { return aktiv(daten.module); },
+        modulVon: function (id) { const m = daten.module.filter(function (x) { return x.id === id; })[0]; return m && !m.geloescht ? m : null; },
+        aufgabeVon: aufgabeEcht,
         speichereAufgabe: speichereAufgabe, loescheAufgabe: loescheAufgabe, uid: uid,
         oeffneAufgabe: function (id) { oeffneAufgabe(id); }, auswahlAufbereiten: auswahlAufbereiten,
         neuZeichnen: function () { if (ansicht === 'einstellungen') render(); },
@@ -1810,25 +2631,30 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 25;
+  const VERSION = 26;
   const NEUIGKEITEN = [
-    ['🎨', 'Farbwelten', 'Sechs Farbwelten zur Auswahl: Standard, Minze & Rosa, Frost & Schiefer, Karten-Pastell, Nacht & Himmelblau und Ruß & Limette. Unter Einstellungen → Farbwelt.']
+    ['🧭', 'Bedienungstour', 'Eine kurze Tour zeigt dir SchulPlaner in rund 30 Sekunden – mit Beispielen, ohne etwas zu ändern. Jederzeit unter Einstellungen → Bedienungshilfe.']
   ];
+  function neuDlgStil() {                       // gemeinsamer Stil für kleine Hinweis-Fenster (Neuigkeiten, Tour-Einladung)
+    if (document.getElementById('neuDlgStil')) return;
+    const stil = document.createElement('style');
+    stil.id = 'neuDlgStil';
+    stil.textContent =
+      'dialog.neu-dlg{width:min(440px,92vw);max-width:92vw;height:fit-content;min-height:0;max-height:86vh;margin:auto;border-radius:26px;border:1px solid var(--kante)}' +
+      '.neu-dlg .dlg-koerper{max-height:calc(86vh - 80px);padding-top:24px}' +
+      '.neu-dlg h2{margin:0 0 2px;font-size:22px}' +
+      '.neu-dlg .neu-unter{color:var(--muted);font-size:13.5px;margin-bottom:14px}' +
+      '.neu-punkt{display:flex;gap:12px;align-items:flex-start;padding:8px 0}' +
+      '.neu-punkt .neu-icon{font-size:22px;line-height:1.2;flex:0 0 28px;text-align:center}' +
+      '.neu-punkt b{display:block;font-size:15px}' +
+      '.neu-punkt span{display:block;color:var(--muted);font-size:13.5px;line-height:1.4}' +
+      '.neu-dlg .dlg-fuss .btn{flex:1}';
+    document.head.appendChild(stil);
+  }
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
     if (!dlg) {
-      const stil = document.createElement('style');
-      stil.textContent =
-        'dialog.neu-dlg{width:min(440px,92vw);max-width:92vw;height:fit-content;min-height:0;max-height:86vh;margin:auto;border-radius:26px;border:1px solid var(--kante)}' +
-        '.neu-dlg .dlg-koerper{max-height:calc(86vh - 80px);padding-top:24px}' +
-        '.neu-dlg h2{margin:0 0 2px;font-size:22px}' +
-        '.neu-dlg .neu-unter{color:var(--muted);font-size:13.5px;margin-bottom:14px}' +
-        '.neu-punkt{display:flex;gap:12px;align-items:flex-start;padding:8px 0}' +
-        '.neu-punkt .neu-icon{font-size:22px;line-height:1.2;flex:0 0 28px;text-align:center}' +
-        '.neu-punkt b{display:block;font-size:15px}' +
-        '.neu-punkt span{display:block;color:var(--muted);font-size:13.5px;line-height:1.4}' +
-        '.neu-dlg .dlg-fuss .btn{flex:1}';
-      document.head.appendChild(stil);
+      neuDlgStil();
       dlg = document.createElement('dialog');
       dlg.id = 'dlgNeu';
       dlg.className = 'neu-dlg';
@@ -1864,12 +2690,14 @@ function starteApp() {
     let letzt = window.scrollY;
     window.addEventListener('scroll', function () {
       const y = window.scrollY, d = y - letzt;
+      if (tour) { letzt = y; return; }             // während der Tour bleibt die Leiste ruhig
       if (Math.abs(d) < 8) return;
       document.documentElement.classList.toggle('leiste-klein', d > 0 && y > 80);
       letzt = y;
     }, { passive: true });
   })();
-  setTimeout(function () { if (!neuigkeitenPruefen()) designWahlPruefen(); }, 700);
+  // Nie zwei Fenster übereinander: Einladung zur Tour (nur Neulinge) → sonst „Was ist neu?“ → sonst Design-Auswahl
+  setTimeout(function () { if (tourEinladungPruefen()) return; if (!neuigkeitenPruefen()) designWahlPruefen(); }, 700);
   setzeStatus(konfiguriert() ? 'blau' : 'grau', konfiguriert() ? 'Verbinde …' : 'Nur auf diesem Gerät');
   synchronisiere();
   setInterval(function () { tageswechselPruefen(); themaNachpruefen(); }, 20000);
