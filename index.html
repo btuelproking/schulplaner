@@ -15,6 +15,10 @@
   try { wahl = localStorage.getItem('schulplaner.thema') || 'auto'; } catch (e) {}
   var dunkel = wahl === 'dunkel' || (wahl === 'auto' && window.matchMedia &&
                window.matchMedia('(prefers-color-scheme: dark)').matches);
+  var welt = 'standard';
+  try { welt = localStorage.getItem('schulplaner.farbwelt') || 'standard'; } catch (e) {}
+  if (welt === 'nacht' || welt === 'limette') dunkel = true;      // diese Farbwelten sind immer dunkel
+  document.documentElement.setAttribute('data-farbwelt', welt);
   document.documentElement.setAttribute('data-thema', dunkel ? 'dunkel' : 'hell');
 })();
 </script>
@@ -28,7 +32,7 @@
    ========================================================= */
 :root{
   --text:#1D1D1F; --muted:#64646C; --muted2:#8B8B93;
-  --accent:#0A7AFF; --accent-dunkel:#0062D6;
+  --accent:#0A7AFF; --accent-dunkel:#0062D6; --accent-hell:#3E94FF; --accent-tief:#0066E0; --accent-rgb:10,122,255; --akzent-text:#fff;
   --danger:#FF3B30; --done:#2FB956; --warn:#FF9500;
   --glas:rgba(255,255,255,.50); --glas-stark:rgba(255,255,255,.70); --glas-zart:rgba(255,255,255,.30); --glas-fest:rgba(255,255,255,.58);
   --kante:rgba(255,255,255,.80);
@@ -123,8 +127,8 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .btn{transition:transform 120ms var(--ease-out)}
 .btn:active{transform:scale(.97)}
 .btn-primary{
-  background:linear-gradient(180deg,#3E94FF 0%,#0A7AFF 55%,#0066E0 100%);
-  color:#fff;border-color:rgba(255,255,255,.38);
+  background:linear-gradient(180deg,var(--accent-hell) 0%,var(--accent) 55%,var(--accent-tief) 100%);
+  color:var(--akzent-text);border-color:rgba(255,255,255,.38);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(0,40,120,.18),0 6px 16px rgba(0,102,224,.34);
 }
 .btn-danger{color:var(--danger)}
@@ -220,7 +224,7 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .meta .ueberfaellig{color:var(--danger);font-weight:650}
 .mod-punkt{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
 .balken{height:6px;border-radius:3px;background:rgba(30,30,70,.09);margin:11px 0 0 36px;overflow:hidden;max-width:220px}
-.balken i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#3E94FF,#0A7AFF)}
+.balken i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent-hell),var(--accent))}
 .balken.voll i{background:var(--done)}
 .balken-text{font-size:12px;color:var(--muted2);margin:5px 0 0 36px}
 .unterliste{margin:9px 0 0 36px;font-size:14px}
@@ -251,8 +255,8 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
 .kal .tag:nth-child(7n){border-right:0}
 .tag.fremd .nr,.tag.fremd .eintrag{opacity:.4}
 .tag .nr{align-self:flex-start;display:inline-flex;align-items:center;justify-content:center;min-width:25px;height:25px;border-radius:999px;font-size:13px;font-weight:500;padding:0 4px}
-.tag.heute .nr{background:var(--accent);color:#fff;font-weight:700;box-shadow:0 3px 10px rgba(10,122,255,.35)}
-.tag.gewaehlt{background:rgba(10,122,255,.09);box-shadow:inset 0 0 0 1.5px rgba(10,122,255,.45)}
+.tag.heute .nr{background:var(--accent);color:var(--akzent-text);font-weight:700;box-shadow:0 3px 10px rgba(var(--accent-rgb),.35)}
+.tag.gewaehlt{background:rgba(var(--accent-rgb),.09);box-shadow:inset 0 0 0 1.5px rgba(var(--accent-rgb),.45)}
 .tag .anz{position:absolute;top:10px;right:9px;font-size:11px;color:var(--muted2)}
 .tag .eintrag{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
 .tag .eintrag.ok{color:var(--muted2);text-decoration:line-through}
@@ -280,7 +284,7 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text)}
   background:rgba(255,255,255,.66);box-shadow:inset 0 1px 2px rgba(35,45,95,.06);outline:none;
 }
 .filter input:focus,.filter select:focus,.feld input:focus,.feld select:focus,.feld textarea:focus,.unter-neu input:focus{
-  border-color:rgba(10,122,255,.6);box-shadow:0 0 0 3px rgba(10,122,255,.18);
+  border-color:rgba(var(--accent-rgb),.6);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18);
 }
 .filter input{flex:1;min-width:200px}
 .box{border-radius:var(--r);padding:18px 20px;margin-top:16px}
@@ -356,7 +360,7 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
     display:flex;position:fixed;right:18px;bottom:calc(88px + env(safe-area-inset-bottom));z-index:31;
     width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.45);color:#fff;
     align-items:center;justify-content:center;
-    background:linear-gradient(180deg,#3E94FF,#0A7AFF 55%,#0066E0);
+    background:linear-gradient(180deg,var(--accent-hell),var(--accent) 55%,var(--accent-tief));
     box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 10px 24px rgba(0,102,224,.42);
   }
   dialog{width:100vw;max-width:100vw;height:100%;max-height:100%;border-radius:0;border:0}
@@ -405,7 +409,7 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
 :root[data-thema="dunkel"]{
   color-scheme:dark;
   --text:#F2F2F7; --muted:#A4A4B0; --muted2:#787886;
-  --accent:#0A84FF; --accent-dunkel:#0060DF;
+  --accent:#0A84FF; --accent-dunkel:#0060DF; --accent-hell:#4EA6FF; --accent-tief:#0060DF; --accent-rgb:10,132,255;
   --danger:#FF453A; --done:#30D158; --warn:#FF9F0A;
   --glas:rgba(24,26,46,.36); --glas-stark:rgba(32,35,60,.56); --glas-zart:rgba(16,18,34,.30); --glas-fest:rgba(30,33,62,.40);
   --kante:rgba(255,255,255,.12);
@@ -465,31 +469,31 @@ dialog::backdrop{background:rgba(25,30,60,.22);-webkit-backdrop-filter:blur(6px)
 :root[data-thema="dunkel"] .seiten-modul:active{background:rgba(255,255,255,.07)}
 :root[data-thema="dunkel"] .nav-linse{background:var(--glanz),rgba(255,255,255,.09);box-shadow:var(--licht),0 4px 14px rgba(0,0,0,.25)}
 :root[data-thema="dunkel"] .nav-item.aktiv{
-  background:var(--glanz),rgba(255,255,255,.09);color:#4EA6FF;
+  background:var(--glanz),rgba(255,255,255,.09);color:var(--accent-hell);
   box-shadow:var(--licht),0 4px 14px rgba(0,0,0,.25);
 }
 :root[data-thema="dunkel"] .btn-primary{
-  background:linear-gradient(180deg,#3B9BFF 0%,#0A84FF 55%,#006BE6 100%);
+  background:linear-gradient(180deg,var(--accent-hell) 0%,var(--accent) 55%,var(--accent-tief) 100%);
   border-color:rgba(255,255,255,.22);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 22px rgba(10,132,255,.45);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 22px rgba(var(--accent-rgb),.45);
 }
 :root[data-thema="dunkel"] .status-knopf:not(.fertig):not(.arbeit){border-color:#5E5E6C;background:rgba(255,255,255,.05)}
 :root[data-thema="dunkel"] .status-knopf.arbeit{border-color:var(--accent);background:linear-gradient(90deg,var(--accent) 50%,rgba(255,255,255,.05) 50%)}
 :root[data-thema="dunkel"] .status-knopf.fertig{box-shadow:0 0 14px rgba(48,209,88,.45)}
 :root[data-thema="dunkel"] .sub:not(.ok) .sub-kreis{border-color:#5E5E6C;background:rgba(255,255,255,.05)}
 :root[data-thema="dunkel"] .balken{background:rgba(255,255,255,.10)}
-:root[data-thema="dunkel"] .balken i{background:linear-gradient(90deg,#3B9BFF,#0A84FF);box-shadow:0 0 10px rgba(10,132,255,.55)}
+:root[data-thema="dunkel"] .balken i{background:linear-gradient(90deg,var(--accent-hell),var(--accent));box-shadow:0 0 10px rgba(var(--accent-rgb),.55)}
 :root[data-thema="dunkel"] .balken.voll i{background:var(--done);box-shadow:0 0 10px rgba(48,209,88,.5)}
 :root[data-thema="dunkel"] .chip{background:color-mix(in srgb,currentColor 16%,transparent)}
-:root[data-thema="dunkel"] .stat.blau b{text-shadow:0 0 18px rgba(10,132,255,.45)}
+:root[data-thema="dunkel"] .stat.blau b{text-shadow:0 0 18px rgba(var(--accent-rgb),.45)}
 :root[data-thema="dunkel"] .stat.rot b{text-shadow:0 0 18px rgba(255,69,58,.40)}
 :root[data-thema="dunkel"] .stat.gruen b{text-shadow:0 0 18px rgba(48,209,88,.40)}
 :root[data-thema="dunkel"] .punkt.gruen{box-shadow:0 0 8px rgba(48,209,88,.7)}
 
 :root[data-thema="dunkel"] .kal .wt{border-bottom-color:rgba(255,255,255,.07)}
 :root[data-thema="dunkel"] .tag{border-right-color:rgba(255,255,255,.055);border-bottom-color:rgba(255,255,255,.055)}
-:root[data-thema="dunkel"] .tag.gewaehlt{background:rgba(10,132,255,.14);box-shadow:inset 0 0 0 1.5px rgba(10,132,255,.55)}
-:root[data-thema="dunkel"] .tag.heute .nr{box-shadow:0 0 16px rgba(10,132,255,.7)}
+:root[data-thema="dunkel"] .tag.gewaehlt{background:rgba(var(--accent-rgb),.14);box-shadow:inset 0 0 0 1.5px rgba(var(--accent-rgb),.55)}
+:root[data-thema="dunkel"] .tag.heute .nr{box-shadow:0 0 16px rgba(var(--accent-rgb),.7)}
 :root[data-thema="dunkel"] .tag.fremd .nr,:root[data-thema="dunkel"] .tag.fremd .eintrag{opacity:.32}
 
 :root[data-thema="dunkel"] .filter input,:root[data-thema="dunkel"] .filter select,
@@ -529,7 +533,7 @@ html.thema-wechsel *, html.thema-wechsel *::before, html.thema-wechsel *::after{
   transition:background-color .4s ease,color .4s ease,border-color .4s ease,box-shadow .4s ease!important;
 }
 @media (max-width:560px){ .kopf-rechts{padding-top:2px} }
-.thema-wahl .btn.aktiv{color:var(--accent);box-shadow:var(--licht),0 0 0 2px rgba(10,132,255,.55)}
+.thema-wahl .btn.aktiv{color:var(--accent);box-shadow:var(--licht),0 0 0 2px rgba(var(--accent-rgb),.55)}
 
 /* ---------- Glas-Auswahlliste ---------- */
 .auswahl-versteckt{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;overflow:hidden}
@@ -538,8 +542,8 @@ html.thema-wechsel *, html.thema-wechsel *::before, html.thema-wechsel *::after{
   border:1px solid var(--kante);border-radius:var(--r-klein);padding:10px 12px;
   background:rgba(255,255,255,.66);box-shadow:inset 0 1px 2px rgba(35,45,95,.06);color:var(--text);font-size:15px;
 }
-@media (hover:hover) and (pointer:fine){.auswahl-knopf:hover{border-color:rgba(10,132,255,.35)}}
-.auswahl-knopf[aria-expanded="true"],.auswahl-knopf:focus-visible{border-color:rgba(10,122,255,.6);box-shadow:0 0 0 3px rgba(10,122,255,.18);outline:none}
+@media (hover:hover) and (pointer:fine){.auswahl-knopf:hover{border-color:rgba(var(--accent-rgb),.35)}}
+.auswahl-knopf[aria-expanded="true"],.auswahl-knopf:focus-visible{border-color:rgba(var(--accent-rgb),.6);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18);outline:none}
 .auswahl-knopf svg{width:16px;height:16px;flex:0 0 16px;color:var(--muted);margin-left:auto;transition:transform 180ms var(--ease-out)}
 .auswahl-knopf[aria-expanded="true"] svg{transform:rotate(180deg)}
 .auswahl-text{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
@@ -557,8 +561,8 @@ html.thema-wechsel *, html.thema-wechsel *::before, html.thema-wechsel *::after{
   display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;text-align:left;
   padding:9px 12px;border-radius:10px;font-size:14.5px;color:var(--text);cursor:pointer;
 }
-.auswahl-option:focus-visible{background:rgba(10,122,255,.10);outline:none}
-@media (hover:hover) and (pointer:fine){.auswahl-option:hover{background:rgba(10,122,255,.10)}}
+.auswahl-option:focus-visible{background:rgba(var(--accent-rgb),.10);outline:none}
+@media (hover:hover) and (pointer:fine){.auswahl-option:hover{background:rgba(var(--accent-rgb),.10)}}
 .auswahl-option.aktiv{color:var(--accent);font-weight:600}
 .auswahl-option .auswahl-name{flex:1;white-space:nowrap}
 .auswahl-option svg{width:15px;height:15px;flex:0 0 15px}
@@ -570,9 +574,9 @@ select option{background:#FFFFFF;color:#1D1D1F}
   background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,0) 50%),rgba(28,31,52,.97);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 18px 50px rgba(0,0,0,.55);
 }
-:root[data-thema="dunkel"] .auswahl-option:focus-visible{background:rgba(10,132,255,.20)}
-@media (hover:hover) and (pointer:fine){:root[data-thema="dunkel"] .auswahl-option:hover{background:rgba(10,132,255,.20)}}
-:root[data-thema="dunkel"] .auswahl-option.aktiv{color:#4EA6FF}
+:root[data-thema="dunkel"] .auswahl-option:focus-visible{background:rgba(var(--accent-rgb),.20)}
+@media (hover:hover) and (pointer:fine){:root[data-thema="dunkel"] .auswahl-option:hover{background:rgba(var(--accent-rgb),.20)}}
+:root[data-thema="dunkel"] .auswahl-option.aktiv{color:var(--accent-hell)}
 
 
 /* =========================================================
@@ -584,7 +588,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
 .h-u{font-size:12.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
 .h-chip{margin-left:auto;font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap;flex:0 0 auto}
 .h-chip.rot{background:rgba(255,59,48,.13);color:#D8322A}
-.h-chip.blau{background:rgba(10,122,255,.12);color:var(--accent)}
+.h-chip.blau{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
 .h-chip.grau{background:rgba(127,127,150,.14);color:var(--muted)}
 :root[data-thema="dunkel"] .h-chip.rot{color:#FF7A70}
 [data-karte]{cursor:pointer}
@@ -614,11 +618,11 @@ select option{background:#FFFFFF;color:#1D1D1F}
 .z-woche{display:flex;gap:4px;padding:6px;border-radius:22px;margin-bottom:14px}
 .z-tag{flex:1;min-width:0;border:0;background:transparent;padding:8px 0 11px;border-radius:16px;font-size:11px;font-weight:700;color:var(--muted);position:relative;transition:background-color 150ms ease,color 150ms ease}
 .z-tag b{display:block;font-size:18px;color:var(--text);margin-top:2px}
-.z-tag.aktiv{background:linear-gradient(180deg,#3E94FF,#0A7AFF);color:rgba(255,255,255,.85);box-shadow:0 8px 18px rgba(10,122,255,.3)}
+.z-tag.aktiv{background:linear-gradient(180deg,var(--accent-hell),var(--accent));color:rgba(255,255,255,.85);box-shadow:0 8px 18px rgba(var(--accent-rgb),.3)}
 .z-tag.aktiv b{color:#fff}
 .z-tag i{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--accent)}
 .z-tag.aktiv i{background:#fff}
-.z-fokus{border-radius:var(--r-gross);padding:14px 16px;margin-bottom:6px;background:linear-gradient(120deg,rgba(10,122,255,.12),rgba(34,184,232,.08)),var(--glanz),var(--glas)}
+.z-fokus{border-radius:var(--r-gross);padding:14px 16px;margin-bottom:6px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.12),rgba(34,184,232,.08)),var(--glanz),var(--glas)}
 .z-fokus .k{font-size:12px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--accent)}
 .z-fokus p{margin:6px 0 0;font-weight:600}
 .z-gruppe h2{display:flex;align-items:baseline;gap:8px;margin:16px 4px 8px;font-size:19px;letter-spacing:-.3px}
@@ -656,7 +660,7 @@ select option{background:#FFFFFF;color:#1D1D1F}
 .stil-wahl{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
 .stil-option{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:10px 10px 12px;border-radius:18px;border:1.5px solid var(--kante);background:var(--glanz),var(--glas-stark);color:var(--text);transition:transform 140ms var(--ease-out),border-color 150ms ease}
 .stil-option:active{transform:scale(.97)}
-.stil-option.aktiv{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,122,255,.18)}
+.stil-option.aktiv{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18)}
 .stil-option b{font-size:15px;margin-top:6px}
 .stil-option small{font-size:12.5px;color:var(--muted);line-height:1.3}
 .stil-dlg h2{font-size:21px;margin:0 0 2px}
@@ -692,6 +696,45 @@ select option{background:#FFFFFF;color:#1D1D1F}
 .moodle-zeile span{min-width:0;overflow-wrap:anywhere}
 .moodle-zeile small{display:block;color:var(--muted);font-size:12.5px}
 .moodle-zeile.weg{opacity:.45}
+
+/* =========================================================
+   Farbwelten (Einstellungen → Farbwelt). Hell: Minze, Frost, Pastell. Immer dunkel: Nacht, Limette.
+   ========================================================= */
+:root[data-farbwelt="minze"]{--accent:#1F6B3A;--accent-hell:#2F9A58;--accent-tief:#17542D;--accent-rgb:31,107,58;--done:#2F9A58}
+:root[data-farbwelt="frost"]{--accent:#0D7480;--accent-hell:#1597A6;--accent-tief:#0A5C66;--accent-rgb:13,116,128;--text:#1F3038}
+:root[data-farbwelt="pastell"]{--accent:#D0106F;--accent-hell:#E6418F;--accent-tief:#A80C59;--accent-rgb:208,16,111}
+:root[data-farbwelt="minze"][data-thema="dunkel"]{--accent:#4FC27A;--accent-hell:#7BD89A;--accent-tief:#2F9A58;--accent-rgb:79,194,122}
+:root[data-farbwelt="frost"][data-thema="dunkel"]{--accent:#3CC0CF;--accent-hell:#6FD6E1;--accent-tief:#1597A6;--accent-rgb:60,192,207;--text:#F2F2F7}
+:root[data-farbwelt="pastell"][data-thema="dunkel"]{--accent:#FF5CA8;--accent-hell:#FF8DC2;--accent-tief:#D0106F;--accent-rgb:255,92,168}
+:root[data-farbwelt="nacht"][data-thema="dunkel"]{--accent:#5AB9FC;--accent-hell:#8BCFFF;--accent-tief:#2F8FE0;--accent-rgb:90,185,252;--akzent-text:#06121F;--text:#E9EDF3}
+:root[data-farbwelt="limette"][data-thema="dunkel"]{--accent:#DAFA9C;--accent-hell:#E8FFC0;--accent-tief:#B6E86A;--accent-rgb:218,250,156;--akzent-text:#101400;--done:#7BD88F;
+  --glas:rgba(30,30,30,.40);--glas-stark:rgba(40,40,40,.60);--glas-zart:rgba(20,20,20,.32);--glas-fest:rgba(36,36,36,.48)}
+/* Hintergrund der hellen Farbwelten */
+:root[data-farbwelt="minze"]:not([data-thema="dunkel"]) .tapete{background:radial-gradient(42vmax 42vmax at 6% 8%,rgba(140,220,180,.85),transparent 62%),radial-gradient(44vmax 44vmax at 94% 6%,rgba(255,190,210,.75),transparent 62%),radial-gradient(40vmax 40vmax at 96% 96%,rgba(190,235,205,.8),transparent 62%),radial-gradient(46vmax 46vmax at 6% 96%,rgba(255,215,225,.7),transparent 62%),#F8F8F8}
+:root[data-farbwelt="frost"]:not([data-thema="dunkel"]) .tapete{background:radial-gradient(42vmax 42vmax at 6% 8%,rgba(150,200,215,.85),transparent 62%),radial-gradient(44vmax 44vmax at 94% 6%,rgba(190,215,230,.85),transparent 62%),radial-gradient(40vmax 40vmax at 96% 96%,rgba(160,215,210,.8),transparent 62%),radial-gradient(46vmax 46vmax at 6% 96%,rgba(205,220,235,.8),transparent 62%),#F7F9FA}
+:root[data-farbwelt="pastell"]:not([data-thema="dunkel"]) .tapete{background:radial-gradient(42vmax 42vmax at 6% 8%,rgba(255,190,215,.8),transparent 62%),radial-gradient(44vmax 44vmax at 94% 6%,rgba(255,225,170,.75),transparent 62%),radial-gradient(40vmax 40vmax at 96% 96%,rgba(190,215,255,.75),transparent 62%),radial-gradient(46vmax 46vmax at 6% 96%,rgba(215,245,205,.75),transparent 62%),#F7F7F5}
+:root[data-farbwelt]:not([data-farbwelt="standard"]):not([data-thema="dunkel"]) .tapete::before{display:none}
+/* Hintergrund der dunklen Farbwelten */
+:root[data-farbwelt="nacht"][data-thema="dunkel"] body{background:#0A0D14}
+:root[data-farbwelt="nacht"][data-thema="dunkel"] .tapete{background:#0A0D14}
+:root[data-farbwelt="nacht"][data-thema="dunkel"] .tapete::before{background:radial-gradient(40vmax 40vmax at 8% 12%,rgba(40,90,170,.75),transparent 62%),radial-gradient(44vmax 44vmax at 92% 8%,rgba(20,60,120,.7),transparent 62%),radial-gradient(38vmax 38vmax at 96% 92%,rgba(60,140,210,.45),transparent 62%),radial-gradient(46vmax 46vmax at 6% 94%,rgba(30,50,100,.7),transparent 62%)}
+:root[data-farbwelt="limette"][data-thema="dunkel"] body{background:#0F0F0F}
+:root[data-farbwelt="limette"][data-thema="dunkel"] .tapete{background:#0F0F0F}
+:root[data-farbwelt="limette"][data-thema="dunkel"] .tapete::before{background:radial-gradient(40vmax 40vmax at 8% 12%,rgba(120,150,60,.45),transparent 62%),radial-gradient(44vmax 44vmax at 92% 8%,rgba(60,70,50,.6),transparent 62%),radial-gradient(38vmax 38vmax at 96% 92%,rgba(170,210,90,.25),transparent 62%),radial-gradient(46vmax 46vmax at 6% 94%,rgba(40,45,40,.7),transparent 62%)}
+:root[data-farbwelt="nacht"] .tapete::after,:root[data-farbwelt="limette"] .tapete::after{display:none}
+/* Akzentflächen mit passender Schriftfarbe */
+#fabNeu,.z-tag.aktiv,.z-tag.aktiv b{color:var(--akzent-text)}
+:root[data-thema="dunkel"] .nav-item.aktiv{color:var(--accent-hell)}
+/* Auswahl in den Einstellungen */
+.farbwelt-wahl{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.farbwelt-option{display:flex;flex-direction:column;gap:6px;align-items:stretch;padding:8px 8px 10px;border-radius:16px;border:1.5px solid var(--kante);background:var(--glanz),var(--glas-stark);color:var(--text);font-weight:600;font-size:13px;text-align:center;transition:transform 140ms var(--ease-out)}
+.farbwelt-option:active{transform:scale(.97)}
+.farbwelt-option.aktiv{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.22)}
+.farbwelt-muster{position:relative;height:54px;border-radius:11px;overflow:hidden}
+.farbwelt-muster i{position:absolute;right:6px;bottom:6px;width:22px;height:22px;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.farbwelt-muster b{position:absolute;left:6px;top:6px;right:34px;height:16px;border-radius:5px;background:rgba(255,255,255,.75)}
+.farbwelt-muster.dunkel b{background:rgba(255,255,255,.12)}
+@media (max-width:420px){.farbwelt-wahl{grid-template-columns:repeat(2,1fr)}}
 /* =========================================================
    Liquid Glass (iOS-Stil): schwebende Tab-Leiste, Lichtkanten, lebendiger Hintergrund
    ========================================================= */

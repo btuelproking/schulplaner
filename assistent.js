@@ -730,7 +730,7 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-msg p{margin:0 0 6px} .ki-msg p:last-child{margin-bottom:0}
 .ki-msg ul{margin:4px 0 6px;padding-left:20px} .ki-msg li{margin:2px 0}
 .ki-msg code{font-size:13px;background:rgba(127,127,140,.15);padding:1px 5px;border-radius:5px}
-.ki-ich{align-self:flex-end;color:#fff;background:linear-gradient(180deg,#3E94FF,#0A7AFF);border-bottom-right-radius:6px}
+.ki-ich{align-self:flex-end;color:var(--akzent-text);background:linear-gradient(180deg,var(--accent-hell),var(--accent));border-bottom-right-radius:6px}
 .ki-ki{align-self:flex-start;background:rgba(255,255,255,.75);border:1px solid var(--kante);border-bottom-left-radius:6px}
 :root[data-thema="dunkel"] .ki-ki{background:rgba(255,255,255,.07)}
 .ki-fehler{align-self:stretch;max-width:none;font-size:13.5px;background:rgba(255,59,48,.12);color:#A3221B}
@@ -772,7 +772,7 @@ html.ki-offen #kiPanel{transform:none;opacity:1;pointer-events:auto}
 .ki-form{display:flex;align-items:flex-end;gap:6px;margin:6px 12px 0;padding:6px;border-radius:22px;border:1px solid var(--kante);background:rgba(255,255,255,.8)}
 :root[data-thema="dunkel"] .ki-form{background:rgba(255,255,255,.07)}
 .ki-form textarea{flex:1;border:0;outline:none;resize:none;background:transparent;color:var(--text);font:inherit;font-size:16px;line-height:1.4;padding:7px 0;max-height:140px}
-.ki-senden,.ki-stopp{width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:0;color:#fff;background:linear-gradient(180deg,#3E94FF,#0A7AFF);padding:8px;cursor:pointer}
+.ki-senden,.ki-stopp{width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:0;color:var(--akzent-text);background:linear-gradient(180deg,var(--accent-hell),var(--accent));padding:8px;cursor:pointer}
 .ki-stopp{background:#55555E}
 .ki-senden svg,.ki-stopp svg{width:100%;height:100%;display:block}
 .ki-fuss{font-size:11.5px;color:var(--muted2);text-align:center;padding:6px 12px calc(10px + env(safe-area-inset-bottom))}

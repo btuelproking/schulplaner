@@ -230,14 +230,44 @@ function starteApp() {
   function themaWahl() {
     try { return localStorage.getItem('schulplaner.thema') || 'auto'; } catch (e) { return 'auto'; }
   }
+  /* Farbwelten: [id, Name, immer dunkel?, Hintergrund hell, Hintergrund dunkel, Akzent] */
+  const FARBWELTEN = [
+    ['standard', 'Standard', false, '#E9ECF5', '#080915', '#0A7AFF'],
+    ['minze', 'Minze & Rosa', false, '#F8F8F8', '#080915', '#1F6B3A'],
+    ['frost', 'Frost & Schiefer', false, '#F7F9FA', '#080915', '#0D7480'],
+    ['pastell', 'Karten-Pastell', false, '#F7F7F5', '#080915', '#D0106F'],
+    ['nacht', 'Nacht & Himmelblau', true, '#0A0D14', '#0A0D14', '#5AB9FC'],
+    ['limette', 'Ruß & Limette', true, '#0F0F0F', '#0F0F0F', '#DAFA9C']
+  ];
+  function farbwelt() {
+    let w = 'standard';
+    try { w = localStorage.getItem('schulplaner.farbwelt') || 'standard'; } catch (e) { }
+    return FARBWELTEN.find(function (x) { return x[0] === w; }) || FARBWELTEN[0];
+  }
   function themaAnwenden() {
-    const wahl = themaWahl();
+    const wahl = themaWahl(), welt = farbwelt();
     const system = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const dunkel = wahl === 'dunkel' || (wahl === 'auto' && system);
+    const dunkel = welt[2] || wahl === 'dunkel' || (wahl === 'auto' && system);
+    document.documentElement.setAttribute('data-farbwelt', welt[0]);
     document.documentElement.setAttribute('data-thema', dunkel ? 'dunkel' : 'hell');
     document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
-      m.setAttribute('content', dunkel ? '#080915' : '#E9ECF5');      // Farbe der Titelleiste
+      m.setAttribute('content', dunkel ? welt[4] : welt[3]);          // Farbe der Titelleiste
     });
+  }
+  function farbweltSetzen(id) {
+    try { localStorage.setItem('schulplaner.farbwelt', id); } catch (e) { }
+    const html = document.documentElement;
+    html.classList.add('thema-wechsel');
+    themaAnwenden(); render();
+    setTimeout(function () { html.classList.remove('thema-wechsel'); }, 450);
+  }
+  function farbweltWahlHTML() {
+    const aktiv = farbwelt()[0];
+    return '<div class="farbwelt-wahl">' + FARBWELTEN.map(function (w) {
+      const hinter = w[2] ? w[4] : w[3];
+      return '<button class="farbwelt-option' + (w[0] === aktiv ? ' aktiv' : '') + '" data-farbwelt-wahl="' + w[0] + '">' +
+        '<span class="farbwelt-muster' + (w[2] ? ' dunkel' : '') + '" style="background:linear-gradient(135deg,' + hinter + ',' + w[5] + '33)"><b></b><i style="background:' + w[5] + '"></i></span>' + esc(w[1]) + '</button>';
+    }).join('') + '</div>';
   }
   function istDunkel() { return document.documentElement.getAttribute('data-thema') === 'dunkel'; }
   function themaKnopf() {
@@ -259,6 +289,7 @@ function starteApp() {
   }
   function themaSetzen(wahl) {
     try { localStorage.setItem('schulplaner.thema', wahl); } catch (e) { }
+    if (wahl !== 'dunkel' && farbwelt()[2]) { try { localStorage.setItem('schulplaner.farbwelt', 'standard'); } catch (e) { } }
     const html = document.documentElement;
     html.classList.add('thema-wechsel');
     themaAnwenden();
@@ -1315,6 +1346,8 @@ function starteApp() {
       '<div class="hinweis ok" id="syncStatusSeite" style="margin-top:12px"></div></div>';
 
     const wahl = themaWahl();
+    h += '<div class="box"><h3>Farbwelt</h3><p>Die Farben der ganzen App. „Nacht“ und „Limette“ sind immer dunkel, die anderen folgen Hell/Dunkel.</p>' + farbweltWahlHTML() + '</div>';
+
     h += '<div class="box"><h3>Erscheinungsbild</h3>' +
       '<p>„Automatisch" folgt dem Hell- oder Dunkelmodus deines Geräts.</p><div class="thema-wahl">' +
       [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map(function (o) {
@@ -1652,6 +1685,7 @@ function starteApp() {
         $('#cfgCode').value = code;
         return;
       }
+      if ((el = ziel('data-farbwelt-wahl'))) { farbweltSetzen(el.getAttribute('data-farbwelt-wahl')); return; }
       if ((el = ziel('data-thema-wahl'))) { themaSetzen(el.getAttribute('data-thema-wahl')); return; }
       if (ziel('data-thema-umschalten')) { themaSetzen(istDunkel() ? 'hell' : 'dunkel'); return; }
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
@@ -1776,10 +1810,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 24;
+  const VERSION = 25;
   const NEUIGKEITEN = [
-    ['🎓', 'Moodle-Abgleich', 'Übernimm Abgaben und Tests aus dem elearning-Kalender – ohne Passwort. Einmal unter Einstellungen → Moodle-Abgleich verbinden, danach in „Alle Aufgaben“ auf „Moodle“ tippen.'],
-    ['🧠', 'Nichts doppelt', 'Schon vorhandene Aufgaben werden erkannt, verschobene Termine aktualisiert. Vor dem Eintragen siehst du eine Vorschau.']
+    ['🎨', 'Farbwelten', 'Sechs Farbwelten zur Auswahl: Standard, Minze & Rosa, Frost & Schiefer, Karten-Pastell, Nacht & Himmelblau und Ruß & Limette. Unter Einstellungen → Farbwelt.']
   ];
   function neuigkeitenZeigen() {
     let dlg = document.getElementById('dlgNeu');
