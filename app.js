@@ -1709,7 +1709,7 @@ function starteApp() {
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
       if (ziel('data-export')) { exportiere(); return; }
       if (ziel('data-neuigkeiten')) { neuigkeitenZeigen(); return; }
-      if (ziel('data-tour-start')) { tourStarten(); return; }
+      if (ziel('data-tour-start')) { tourAnfordern({ klick: ev }); return; }
       if (ziel('data-import')) { $('#importDatei').click(); return; }
       if ((el = ziel('data-farbe'))) { modulState.farbe = el.getAttribute('data-farbe'); zeichneFarben(); return; }
       if ((el = ziel('data-sub-weg'))) {
@@ -1811,9 +1811,9 @@ function starteApp() {
   const TOUR_SZENEN = [
     ['Heute', 'Heute zeigt dir sofort, was als Nächstes fällig ist.'],
     ['Aufgaben', 'Mit dem Plus legst du eine Aufgabe an und ordnest sie einem Fach zu.'],
-    ['Kalender', 'Im Kalender siehst du jede Abgabe – ein Tipp auf den Tag zeigt die Aufgabe.'],
+    ['Kalender', 'Im Kalender tippst du auf einen Tag und siehst, was fällig ist.'],
     ['Notizbücher', 'In Notizbüchern schreibst du mit dem Stift wie auf Papier.'],
-    ['KI-Assistent', 'Der KI-Assistent beantwortet Lernfragen und trägt Aufgaben für dich ein.']
+    ['KI-Assistent', 'Der KI-Assistent beantwortet Lernfragen und trägt Aufgaben ein.']
   ];
   const TOUR_STOPP = {};                           // Signal: Szene wurde abgebrochen (Weiter, Überspringen)
   const TOUR_GLEITEN = 'cubic-bezier(.32,.72,0,1)';   // dieselbe Kurve wie die Tab-Linse: zügig los, weich abbremsen
@@ -1843,10 +1843,13 @@ function starteApp() {
       dlg.setAttribute('aria-labelledby', 'tourTitel');
       document.body.appendChild(dlg);
       dlg.addEventListener('click', function (e) {
-        if (e.target.closest('[data-tour-ja]')) { dlg.close(); tourStarten({ danach: designWahlPruefen }); }
-        else if (e.target.closest('[data-tour-nein]')) { dlg.close(); setTimeout(designWahlPruefen, 250); }
+        const ziel = e.target && e.target.closest ? e.target : null;
+        if (!ziel) return;
+        if (ziel.closest('[data-tour-ja]')) tourAnfordern({ danach: designWahlPruefen, klick: e });
+        else if (ziel.closest('[data-tour-nein]')) { tourEinladungWeg(); setTimeout(designWahlPruefen, 250); }
       });
       dlg.addEventListener('cancel', function () { setTimeout(designWahlPruefen, 250); });   // Esc = überspringen
+      dlg.addEventListener('close', function () { dlg.remove(); });                        // einmalig: danach nicht im Dokument liegen lassen
     }
     const nav = function (id) { return NAV.filter(function (n) { return n.id === id; })[0].icon; };
     const bild = function (pfad, klasse) {
@@ -1863,6 +1866,37 @@ function starteApp() {
     if (!dlg.open) dlg.showModal();
     const ja = dlg.querySelector('[data-tour-ja]');
     if (ja) ja.blur();                                // kein Fokusrahmen beim Öffnen
+  }
+
+  function tourEinladungWeg() {                     // Einladung schließen UND aus dem Dokument nehmen – danach kann sie nichts mehr blockieren
+    const d = document.getElementById('dlgTour');
+    if (!d) return;
+    try { if (d.open) d.close(); } catch (e) { }
+    d.remove();
+  }
+  /* Ein Einstieg für beide Wege – Willkommensfenster und Einstellungen → „Tour erneut ansehen“.
+     Früher startete die Tour im selben Augenblick, in dem das Willkommensfenster zuging, und gab still auf, sobald noch
+     irgendein Fenster als offen galt. Jetzt: erst das eigene Fenster sicher weg, dann starten; ist kurz noch etwas im Weg,
+     wird gewartet statt aufgegeben. */
+  let tourWartet = false;
+  function tourAnfordern(opt) {
+    opt = opt || {};
+    if (tour || tourWartet) return;
+    tourWartet = true;
+    tourEinladungWeg();
+    // Ort des Tipps merken (Tastatur-„Klicks“ haben keinen Ort) – siehe Doppeltipp-Schutz in tourStarten
+    const klick = opt.klick && (opt.klick.clientX || opt.klick.clientY) ? { x: opt.klick.clientX, y: opt.klick.clientY } : null;
+    let versuche = 0;
+    const versuch = function () {
+      const fenster = document.querySelector('dialog[open]'), heft = !!(window.Notizen && window.Notizen.offen());
+      if ((fenster || heft) && versuche++ < 30) { setTimeout(versuch, 50); return; }
+      tourWartet = false;
+      if (heft) { if (opt.danach) setTimeout(opt.danach, 300); return; }   // ein offenes Notizbuch wird nie überdeckt
+      // steht nach 1,5 s immer noch ein Hinweis-Fenster offen, macht es der Tour Platz
+      document.querySelectorAll('dialog.neu-dlg[open]').forEach(function (d) { try { d.close(); } catch (e) { } });
+      if (!tourStarten({ danach: opt.danach, klick: klick }) && opt.danach) setTimeout(opt.danach, 300);
+    };
+    setTimeout(versuch, 0);                         // einen Wimpernschlag später: Schließen, Fokus-Rückgabe und Tipp sind dann abgeschlossen
   }
 
   /* ---------- Stil (hier in app.js, damit er immer zum Tour-Code passt) ---------- */
@@ -1890,14 +1924,24 @@ function starteApp() {
       '.tour-loch.leuchtet::after{animation:tour-leuchten 1100ms ' + TOUR_AUS + ' both}',
       '@keyframes tour-leuchten{0%{opacity:0}30%{opacity:1}100%{opacity:0}}',
       '.tour-ebene.geht{opacity:0;transition:opacity 180ms ease-out;pointer-events:none}',
-      '.tour-ebene.geht .tour-schild,.tour-ebene.geht .tour-karte{pointer-events:none}',
+      '.tour-ebene.geht .tour-schild,.tour-ebene.geht .tour-karte,.tour-ebene.geht .tour-skip{pointer-events:none}',
       /* Karte mit Satz und Steuerung – „Tour überspringen“ steht unten rechts */
       '.tour-karte{position:fixed;z-index:2010;left:10px;right:10px;bottom:calc(92px + env(safe-area-inset-bottom));padding:13px 16px 10px;border-radius:22px;' +
         'border:1px solid var(--kante);color:var(--text);background:#FAFBFF;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 44px rgba(15,20,50,.32);' +
         'touch-action:none;outline:none;-webkit-user-select:none;user-select:none;animation:tour-blende 200ms ease-out both}',
       ':root[data-thema="dunkel"] .tour-karte{background:#1E2036;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 18px 44px rgba(0,0,0,.6)}',
-      '@media (min-width:561px){.tour-karte{left:auto;width:400px}}',
-      '@media (min-width:881px){.tour-karte{right:28px;bottom:100px}}',
+      /* Tablet hochkant: gleiche Anordnung wie am Handy, aber größere Schrift */
+      '@media (min-width:561px){.tour-karte{padding:16px 20px 12px;border-radius:24px}.tour-kopf{font-size:14px}' +
+        '.tour-texte{margin:9px 0 13px}.tour-texte p{font-size:21px;line-height:1.36}' +
+        '.tour-knoepfe{gap:8px}.tour-knoepfe .btn{min-height:42px;padding:9px 17px;font-size:15px}.tour-knoepfe [data-tour-pause]{min-width:112px}.tour-skip{font-size:15px}}',
+      /* Laptop / iPad quer: große Textkarte mittig unter dem Inhalt (Lage setzt tourKarteSetzen) */
+      '.tour-karte.gross{right:auto;padding:18px 24px 15px;border-radius:26px}',
+      '.tour-karte.gross .tour-texte p{font-size:23px;line-height:1.34;letter-spacing:-.012em}',
+      '@media (min-width:1500px){.tour-karte.gross .tour-texte p{font-size:25px}}',
+      '@media (max-height:520px){.tour-karte .tour-texte p,.tour-karte.gross .tour-texte p{font-size:17px;line-height:1.35}.tour-karte,.tour-karte.gross{padding:11px 16px 9px}.tour-texte{margin:5px 0 8px}}',
+      '.tour-skip.frei{position:fixed;z-index:2010;margin:0;min-height:44px;padding:0 18px;border-radius:999px;text-decoration:none;font-size:15px;color:var(--text);' +
+        'background:#FAFBFF;border:1px solid var(--kante);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 12px 30px rgba(15,20,50,.32);touch-action:none;animation:tour-blende 200ms ease-out both}',
+      ':root[data-thema="dunkel"] .tour-skip.frei{background:#1E2036;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 12px 30px rgba(0,0,0,.6)}',
       '@keyframes tour-blende{from{opacity:0}to{opacity:1}}',
       '.tour-kopf{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--muted)}',
       '.tour-zahl{color:var(--accent);font-variant-numeric:tabular-nums}',
@@ -1952,7 +1996,7 @@ function starteApp() {
       '.tour-chat-liste .ki-msg.da{opacity:1;transform:none}',
       '.tour-versteckt > :not(.tour-gitter){display:none!important}',
       /* Während der Tour: Platz zum Rollen unter der Karte, Auftakt der Heute-Ansicht */
-      'html.tour-laeuft #content .seite::after{content:"";display:block;height:260px}',
+      'html.tour-laeuft #content .seite::after{content:"";display:block;height:var(--tour-platz,260px)}',
       'html.tour-auftritt #content .seite > *{animation:tour-auf 560ms ' + TOUR_AUS + ' both}',
       'html.tour-auftritt #content .seite > :nth-child(1){animation-name:tour-auf-kopf}',
       'html.tour-auftritt #content .seite > :nth-child(2){animation-delay:90ms}',
@@ -2113,17 +2157,50 @@ function starteApp() {
   }
 
   /* ---------- Karte: Zähler, Satz, Steuerung ---------- */
-  function tourKarteSetzen() {                      // über der Tab-Leiste (Handy) bzw. über dem KI-Knopf (Desktop)
+  /* Platz der Erklärkarte.
+     Handy (und alles Schmale/Niedrige): über der Tab-Leiste, „Tour überspringen“ unten rechts in der Karte – wie bisher.
+     iPad und Laptop: große Karte mittig unter dem Geschehen – nie weiter als nötig von der Aktion entfernt –
+     und „Tour überspringen“ als eigener Knopf unten rechts am Bildschirm. */
+  function tourKarteSetzen() {
     const T = tour; if (!T) return;
-    let frei = 0;
-    if (tourMobil()) {
-      const s = $('#sidebar').getBoundingClientRect(), f = $('#fabNeu').getBoundingClientRect();
-      frei = window.innerHeight - Math.min(s.top, f.top) + 12;
-    } else {
-      const k = document.getElementById('kiKnopf');
-      frei = tourSichtbar(k) ? window.innerHeight - k.getBoundingClientRect().top + 16 : 24;
+    const k = T.karte, vw = window.innerWidth, vh = window.innerHeight, mobil = tourMobil();
+    const gross = vw >= 700 && vh >= 600;
+    k.classList.toggle('gross', gross);
+    T.skip.classList.toggle('frei', gross);
+    const heim = gross ? T.ebene : k.querySelector('.tour-knoepfe');
+    if (T.skip.parentNode !== heim) heim.appendChild(T.skip);
+    const leiste = mobil ? Math.min($('#sidebar').getBoundingClientRect().top, $('#fabNeu').getBoundingClientRect().top) : vh;
+    if (!gross) {
+      k.style.left = k.style.width = T.skip.style.right = T.skip.style.bottom = '';
+      const ki = document.getElementById('kiKnopf');
+      k.style.bottom = Math.round(mobil ? vh - leiste + 12 : (tourSichtbar(ki) ? vh - ki.getBoundingClientRect().top + 16 : 24)) + 'px';
+      return;
     }
-    T.karte.style.bottom = Math.round(frei) + 'px';
+    // „Tour überspringen“: unten rechts – über dem Plus-Knopf (Tab-Leiste) bzw. über dem KI-Knopf (Seitenleiste)
+    const ki = document.getElementById('kiKnopf');
+    T.skip.style.right = (mobil ? 14 : 28) + 'px';
+    T.skip.style.bottom = Math.round(mobil ? vh - leiste + 12 : (tourSichtbar(ki) ? vh - ki.getBoundingClientRect().top + 14 : 28)) + 'px';
+    const sk = T.skip.getBoundingClientRect();
+    // Karte: mittig unter der Inhaltsspalte; auf hohen Bildschirmen nicht ganz unten, sondern nah am Geschehen
+    const c = $('#content').getBoundingClientRect();
+    const mitte = mobil ? vw / 2 : c.left + Math.min(c.width, 1200) / 2;
+    const platz = mobil ? vw - 28 : c.width - 32;
+    const boden = mobil ? sk.top - 12 : vh - 28;                         // tiefste erlaubte Unterkante
+    const setzen = function (breite) {
+      k.style.width = Math.round(breite) + 'px';
+      const h = k.offsetHeight, oben = Math.min(boden - h, 660);
+      k.style.left = Math.round(Math.max(mobil ? 14 : c.left + 12, mitte - breite / 2)) + 'px';
+      k.style.bottom = Math.round(vh - oben - h) + 'px';
+      return { oben: oben, unten: oben + h };
+    };
+    const lage = setzen(Math.min(700, platz));
+    if (!mobil && lage.unten > sk.top - 12 && lage.oben < sk.bottom + 12) {   // läge sonst unter dem Überspringen-Knopf: schmaler
+      setzen(Math.max(380, Math.min(700, platz, 2 * (sk.left - 16 - mitte))));
+    }
+  }
+  function tourPlatzSetzen() {                      // genug Platz zum Rollen, damit jedes Ziel über die Karte passt
+    const T = tour; if (!T) return;
+    document.documentElement.style.setProperty('--tour-platz', Math.round(window.innerHeight - T.karte.getBoundingClientRect().top + 60) + 'px');
   }
   function tourKopf(i) {
     const T = tour; if (!T) return;
@@ -2141,7 +2218,7 @@ function starteApp() {
     });
     if (i != null) T.textAb = performance.now();
   }
-  function tourLesezeit(i) { return Math.max(2800, 1300 + TOUR_SZENEN[i][1].length * 48); }   // Standzeit richtet sich nach der Textlänge
+  function tourLesezeit(i) { return Math.max(3200, 1500 + TOUR_SZENEN[i][1].length * 52); }   // Standzeit richtet sich nach der Textlänge
   function tourRestLesen(t, i, mindestens) {        // nach der Aktion noch so lange stehen bleiben, bis der Satz gelesen ist
     const T = tour, schon = T ? performance.now() - T.textAb : 0;
     return tourWarte(t, Math.max(mindestens || 1200, tourLesezeit(i) - schon));
@@ -2333,7 +2410,7 @@ function starteApp() {
       tourAnsicht('heute');
       await tourLochZu(t, plus);
       tourText(1);
-      await tourWarte(t, 750);
+      await tourWarte(t, 1000);                      // erst lesen lassen, dann geht die Aktion los
       if (!T.rm && plus()) await tourAnim(plus(), [{ transform: 'scale(1)' }, { transform: 'scale(.92)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' });
       if (t.ab) throw TOUR_STOPP;
       const q = tourDialogAuf(plus());               // Formular wächst aus dem Plus, die Hervorhebung geht mit
@@ -2396,7 +2473,7 @@ function starteApp() {
       await tourInSicht(t, buch());
       await tourLochZu(t, buch);
       tourText(3);
-      await tourWarte(t, 950);
+      await tourWarte(t, 1050);
       const blatt = tourBlattAuf(buch());            // die Seite wächst aus dem Notizbuch
       await tourLochZu(t, function () { return blatt.q; }, 340);
       await tourWarte(t, 200);
@@ -2420,7 +2497,7 @@ function starteApp() {
       tourRollSetzen(0);
       await tourLochZu(t, knopf);
       tourText(4);
-      await tourWarte(t, 900);
+      await tourWarte(t, 1050);
       const chat = tourChatAuf(knopf());
       await tourLochZu(t, function () { return chat.q; }, 340);
       await tourWarte(t, 300);
@@ -2464,7 +2541,9 @@ function starteApp() {
     tourText(null);
     tourRequisitenWeg();
     tourZustandZurueck();
-    tourAnim(T.karte, [{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
+    [T.karte, T.skip.classList.contains('frei') ? T.skip : null].forEach(function (el) {
+      if (el) tourAnim(el, [{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
+    });
     tourLochZu(t, tourVollbild, 460).then(function () { if (tour === T) tourBeenden(); }).catch(function () { });
   }
 
@@ -2483,7 +2562,7 @@ function starteApp() {
   function tourTaste(e) {
     const T = tour; if (!T) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tourBeenden(); return; }
-    if (T.karte.contains(e.target)) {
+    if (T.karte.contains(e.target) || e.target === T.skip) {
       if (e.key === 'ArrowRight') { e.preventDefault(); tourWeiter(); }
       else if (e.key === ' ' && e.target === T.karte) { e.preventDefault(); if (!T.rm && !T.endet) tourPauseSetzen(!T.pause); }
       else if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].indexOf(e.key) >= 0) e.preventDefault();   // die Seite darunter rollt nicht
@@ -2500,7 +2579,7 @@ function starteApp() {
   }
   function tourGroesse() {
     const T = tour; if (!T) return;
-    tourKarteSetzen();
+    tourKarteSetzen(); tourPlatzSetzen();
     if (Math.abs(window.innerWidth - T.breite) > 4) {   // gedreht oder Fenster verändert: Szene neu aufbauen
       T.breite = window.innerWidth;
       clearTimeout(T.groesseTimer);
@@ -2509,70 +2588,99 @@ function starteApp() {
       const q = T.zielFn(); if (q) tourLochDirekt(q);
     }
   }
-  function tourStarten(opt) {
+  function tourStarten(opt) {                       // nur über tourAnfordern() aufrufen
     opt = opt || {};
     if (tour) return false;
     if (document.querySelector('dialog[open]') || (window.Notizen && window.Notizen.offen())) return false;
     tourStil();
     const html = document.documentElement;
-    if (html.classList.contains('ki-offen')) { const zu = document.querySelector('#kiPanel [data-ki-zu]'); if (zu) zu.click(); }
-    listeSchliessen();
     const rc = tourRoller();
     const T = tour = {
       i: 0, token: null, pause: false, endet: false, zurueck: false, anims: [], reqs: [], lochAnim: null, zielFn: null, buchAn: false, dialogAn: false,
       rm: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches),
-      danach: opt.danach || null, breite: window.innerWidth, textAb: 0, sicherOben: 0,
+      danach: opt.danach || null, breite: window.innerWidth, textAb: 0, sicherOben: 0, gesperrt: [],
+      gestartet: performance.now(), startKlick: opt.klick || null,
       vorher: { ansicht: ansicht, modulOffen: modulOffen, kalDatum: kalDatum, kalGewaehlt: kalGewaehlt, rollC: rc ? rc.scrollTop : 0, rollW: window.scrollY,
         fokus: document.activeElement, ausEinstellungen: ansicht === 'einstellungen' }
     };
-    demo = tourDemoDaten();
+    try {
+      if (html.classList.contains('ki-offen')) { const zu = document.querySelector('#kiPanel [data-ki-zu]'); if (zu) zu.click(); }
+      listeSchliessen();
+      demo = tourDemoDaten();
 
-    const ebene = T.ebene = document.createElement('div');
-    ebene.className = 'tour-ebene';
-    ebene.innerHTML = '<div class="tour-schild"></div><div class="tour-loch" aria-hidden="true"></div>' +
-      '<div class="tour-karte" role="dialog" aria-label="Bedienungstour" tabindex="-1">' +
-      '<div class="tour-kopf"><span class="tour-zahl"></span><span class="tour-name"></span><span class="tour-punkte" aria-hidden="true">' +
-      TOUR_SZENEN.map(function () { return '<i></i>'; }).join('') + '</span></div>' +
-      '<div class="tour-texte" aria-live="polite">' + TOUR_SZENEN.map(function (s) { return '<p aria-hidden="true">' + esc(s[1]) + '</p>'; }).join('') + '</div>' +
-      '<div class="tour-knoepfe"><button type="button" class="btn" data-tour-pause="1"' + (T.rm ? ' hidden' : '') + '>Pause</button>' +
-      '<button type="button" class="btn btn-primary" data-tour-weiter="1">Weiter</button>' +
-      '<button type="button" class="tour-skip" data-tour-ende="1">Tour überspringen</button></div></div>';
-    document.body.appendChild(ebene);
-    T.schild = ebene.querySelector('.tour-schild'); T.loch = ebene.querySelector('.tour-loch'); T.karte = ebene.querySelector('.tour-karte');
-    // obere sichere Zone (Notch) einmal ausmessen
-    const mess = document.createElement('div');
-    mess.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top);visibility:hidden';
-    ebene.appendChild(mess); T.sicherOben = mess.offsetHeight || 0; mess.remove();
+      const ebene = T.ebene = document.createElement('div');
+      ebene.className = 'tour-ebene';
+      ebene.innerHTML = '<div class="tour-schild"></div><div class="tour-loch" aria-hidden="true"></div>' +
+        '<div class="tour-karte" role="dialog" aria-label="Bedienungstour" tabindex="-1">' +
+        '<div class="tour-kopf"><span class="tour-zahl"></span><span class="tour-name"></span><span class="tour-punkte" aria-hidden="true">' +
+        TOUR_SZENEN.map(function () { return '<i></i>'; }).join('') + '</span></div>' +
+        '<div class="tour-texte" aria-live="polite">' + TOUR_SZENEN.map(function (s) { return '<p aria-hidden="true">' + esc(s[1]) + '</p>'; }).join('') + '</div>' +
+        '<div class="tour-knoepfe"><button type="button" class="btn" data-tour-pause="1"' + (T.rm ? ' hidden' : '') + '>Pause</button>' +
+        '<button type="button" class="btn btn-primary" data-tour-weiter="1">Weiter</button>' +
+        '<button type="button" class="tour-skip" data-tour-ende="1">Tour überspringen</button></div></div>';
+      document.body.appendChild(ebene);
+      T.schild = ebene.querySelector('.tour-schild'); T.loch = ebene.querySelector('.tour-loch'); T.karte = ebene.querySelector('.tour-karte');
+      T.skip = ebene.querySelector('.tour-skip');
+      // obere sichere Zone (Notch) einmal ausmessen
+      const mess = document.createElement('div');
+      mess.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top);visibility:hidden';
+      ebene.appendChild(mess); T.sicherOben = mess.offsetHeight || 0; mess.remove();
 
-    // Die App darunter ist während der Tour gesperrt: keine Tipps, kein Fokus, keine Tastenkürzel
-    T.gesperrt = ['#app', '#fabNeu', '#kiKnopf', '#kiPanel'].map(function (s) { return document.querySelector(s); })
-      .filter(function (e) { return e && !e.inert; });
-    T.gesperrt.forEach(function (e) { e.inert = true; });
-    T.karte.addEventListener('click', function (e) {
-      if (e.target.closest('[data-tour-ende]')) tourBeenden();
-      else if (e.target.closest('[data-tour-weiter]')) tourWeiter();
-      else if (e.target.closest('[data-tour-pause]')) tourPauseSetzen(!T.pause);
-    });
-    const halt = function (e) { e.preventDefault(); };
-    [T.schild, T.karte].forEach(function (el) {
-      el.addEventListener('wheel', halt, { passive: false });
-      el.addEventListener('touchmove', halt, { passive: false });
-    });
-    window.addEventListener('scroll', tourGerollt, true);
-    window.addEventListener('keydown', tourTaste, true);
-    window.addEventListener('resize', tourGroesse);
-    // Zeichnet die App neu (z. B. nach einem Abgleich), kommt das Demo-Notizbuch wieder an seinen Platz
-    if (window.MutationObserver) {
-      T.beob = new MutationObserver(function () { if (tour === T && T.buchAn && !document.querySelector('#content .tour-buch')) tourBuchEin(); });
-      T.beob.observe($('#content'), { childList: true, subtree: true });
+      // Die App darunter ist während der Tour gesperrt: keine Tipps, kein Fokus, keine Tastenkürzel
+      T.gesperrt = ['#app', '#fabNeu', '#kiKnopf', '#kiPanel'].map(function (s) { return document.querySelector(s); })
+        .filter(function (e) { return e && !e.inert; });
+      T.gesperrt.forEach(function (e) { e.inert = true; });
+      ebene.addEventListener('click', function (e) {
+        const knopf = e.target && e.target.closest ? e.target.closest('[data-tour-ende],[data-tour-weiter],[data-tour-pause]') : null;
+        if (!knopf) return;
+        // Ein Doppeltipp auf „Tour ansehen“ darf nicht versehentlich den Knopf treffen, der gerade unter dem Finger erschienen ist
+        const k = T.startKlick;
+        if (k && performance.now() - T.gestartet < 600 && Math.abs(e.clientX - k.x) < 44 && Math.abs(e.clientY - k.y) < 44) return;
+        if (knopf.hasAttribute('data-tour-ende')) tourBeenden();
+        else if (knopf.hasAttribute('data-tour-weiter')) tourWeiter();
+        else tourPauseSetzen(!T.pause);
+      });
+      const halt = function (e) { e.preventDefault(); };
+      [T.schild, T.karte, T.skip].forEach(function (el) {
+        el.addEventListener('wheel', halt, { passive: false });
+        el.addEventListener('touchmove', halt, { passive: false });
+      });
+      window.addEventListener('scroll', tourGerollt, true);
+      window.addEventListener('keydown', tourTaste, true);
+      window.addEventListener('resize', tourGroesse);
+      // Zeichnet die App neu (z. B. nach einem Abgleich), kommt das Demo-Notizbuch wieder an seinen Platz
+      if (window.MutationObserver) {
+        T.beob = new MutationObserver(function () { if (tour === T && T.buchAn && !document.querySelector('#content .tour-buch')) tourBuchEin(); });
+        T.beob.observe($('#content'), { childList: true, subtree: true });
+      }
+      html.classList.add('tour-laeuft');
+      html.classList.remove('leiste-klein');
+      tourKarteSetzen(); tourPlatzSetzen();
+      tourLochDirekt(tourVollbild());
+      try { T.karte.focus({ preventScroll: true }); } catch (e) { }
+      tourSzene(0);
+      return true;
+    } catch (fehler) {                              // Start gescheitert: nichts halb Aufgebautes zurücklassen, die App bleibt bedienbar
+      console.error(fehler);
+      tourNotAus(T);
+      return false;
     }
-    html.classList.add('tour-laeuft');
-    html.classList.remove('leiste-klein');
-    tourKarteSetzen();
-    tourLochDirekt(tourVollbild());
-    try { T.karte.focus({ preventScroll: true }); } catch (e) { }
-    tourSzene(0);
-    return true;
+  }
+  function tourNotAus(T) {
+    if (T.token) T.token.ab = true;
+    demo = null;
+    if (tour === T) tour = null;
+    try { tourDialogZu(); tourBuchWeg(); } catch (e) { }
+    (T.gesperrt || []).forEach(function (e) { e.inert = false; });
+    if (T.beob) T.beob.disconnect();
+    window.removeEventListener('keydown', tourTaste, true);
+    window.removeEventListener('resize', tourGroesse);
+    window.removeEventListener('scroll', tourGerollt, true);
+    document.documentElement.classList.remove('tour-laeuft', 'tour-pause', 'tour-auftritt');
+    document.documentElement.style.removeProperty('--tour-platz');
+    if (T.ebene) T.ebene.remove();
+    ansicht = T.vorher.ansicht; modulOffen = T.vorher.modulOffen; kalDatum = T.vorher.kalDatum; kalGewaehlt = T.vorher.kalGewaehlt;
+    try { render(); } catch (e) { }
   }
   /* Ende der Tour – ob fertig oder übersprungen: Timer, Animationen und Ebenen weg, Ausgangsansicht und Fokus zurück */
   function tourBeenden() {
@@ -2589,6 +2697,7 @@ function starteApp() {
     T.gesperrt.forEach(function (e) { e.inert = false; });
     const html = document.documentElement;
     html.classList.remove('tour-laeuft', 'tour-pause', 'tour-auftritt');
+    html.style.removeProperty('--tour-platz');
     tour = null;
     // Die App ist sofort wieder bedienbar; die Ebene blendet nur noch kurz aus
     T.ebene.classList.add('geht');
@@ -2631,9 +2740,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 26;
+  const VERSION = 26.1;
   const NEUIGKEITEN = [
-    ['🧭', 'Bedienungstour', 'Eine kurze Tour zeigt dir SchulPlaner in rund 30 Sekunden – mit Beispielen, ohne etwas zu ändern. Jederzeit unter Einstellungen → Bedienungshilfe.']
+    ['🧭', 'Bedienungstour verbessert', 'Die Tour startet jetzt zuverlässig direkt aus dem Willkommensfenster. Auf iPad und Laptop stehen die Erklärungen größer und mittig unter dem Geschehen.']
   ];
   function neuDlgStil() {                       // gemeinsamer Stil für kleine Hinweis-Fenster (Neuigkeiten, Tour-Einladung)
     if (document.getElementById('neuDlgStil')) return;
