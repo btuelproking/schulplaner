@@ -281,6 +281,73 @@ function starteApp() {
         '<span class="farbwelt-muster' + (w[2] ? ' dunkel' : '') + '" style="background:linear-gradient(135deg,' + hinter + ',' + w[5] + '33)"><b></b><i style="background:' + w[5] + '"></i></span>' + esc(w[1]) + '</button>';
     }).join('') + '</div>';
   }
+  /* ---------- Position der Navigationsleiste: standard | unten | rechts ---------- */
+  const LEISTEN = [['standard', 'Standard'], ['unten', 'Unten'], ['rechts', 'Rechts']];
+  function leistenPos() {
+    let w = null; try { w = localStorage.getItem('schulplaner.leiste'); } catch (e) { }
+    return LEISTEN.some(function (x) { return x[0] === w; }) ? w : 'standard';
+  }
+  function leisteAnwenden() {
+    leisteStil();
+    const pos = leistenPos(), html = document.documentElement;
+    if (pos === 'standard') html.removeAttribute('data-leiste'); else html.setAttribute('data-leiste', pos);
+    html.classList.remove('leiste-klein');
+  }
+  function leisteSetzen(pos) {
+    try { localStorage.setItem('schulplaner.leiste', pos); } catch (e) { }
+    leisteAnwenden();
+    document.querySelectorAll('[data-leiste-wahl]').forEach(function (b) { b.classList.toggle('aktiv', b.getAttribute('data-leiste-wahl') === pos); });
+    linseSetzen(null);                               // Linse sofort an den neuen Platz des aktiven Tabs
+  }
+  /* Stil in app.js, damit Markup und Aussehen immer zusammenpassen (auch bei gecachter alter index.html) */
+  function leisteStil() {
+    if (document.getElementById('leisteStil')) return;
+    const U = 'html[data-leiste="unten"]', R = 'html[data-leiste="rechts"]', B = 'html[data-leiste]';
+    const st = document.createElement('style'); st.id = 'leisteStil';
+    st.textContent = [
+      ':root{--leiste-h:64px;--leiste-b:76px}',
+      '@media (min-width:881px){:root{--leiste-b:92px}}',
+      /* gemeinsam: Seitenleisten-Extras weg, eigener Plus-Knopf, kein Schrumpfen beim Scrollen */
+      B + ' .marke,' + B + ' .marke-datum,' + B + ' .seiten-fuss,' + B + ' #neuBtnSeite,' + B + ' .seiten-module{display:none}',
+      B + ' #sidebar{position:fixed;z-index:30;width:auto;flex:none;overflow:visible;margin:0;transform:none!important;transition:none;' +
+        'background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%)}',
+      ':root[data-thema="dunkel"]' + B + ' #sidebar{background:rgba(22,24,40,.88)}',
+      B + ' .nav-item{flex-direction:column;justify-content:center;gap:4px;padding:6px 2px;text-align:center;border-radius:16px;font-size:11.5px;font-weight:500;' +
+        'color:var(--muted);touch-action:manipulation;-webkit-user-select:none;user-select:none}',
+      B + ' .nav-item svg{width:23px;height:23px;flex:0 0 23px}',
+      B + ' .nav-item .lang{display:none}',
+      B + ' .nav-item .kurz{display:block;opacity:1!important;white-space:nowrap}',
+      B + ' .nav-item.aktiv{color:var(--accent);font-weight:650}',
+      ':root[data-thema="dunkel"]' + B + ' .nav-item.aktiv{color:var(--accent-hell)}',
+      B + ' .nav-linse{border:0;border-radius:16px;background:rgba(var(--accent-rgb),.14)!important;box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.22)!important}',
+      B + ' .nav-linse::before{display:none}',
+      B + ' #fabNeu{display:flex;position:fixed;z-index:31;width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.45);color:var(--akzent-text,#fff);' +
+        'align-items:center;justify-content:center;transform:none!important;background:linear-gradient(180deg,var(--accent-hell),var(--accent) 55%,var(--accent-tief));' +
+        'box-shadow:var(--glas-rand),0 10px 24px rgba(var(--accent-rgb),.38)}',
+      B + ' #fabNeu:active{transform:scale(.92)!important}',
+      /* UNTEN: angedockte Leiste über die ganze Breite, Platz für die Home-Leiste */
+      U + ' #sidebar{left:0;right:0;bottom:0;top:auto;padding:6px max(10px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));' +
+        'border-radius:22px 22px 0 0;border:0;border-top:1px solid var(--kante);box-shadow:0 -8px 30px rgba(30,40,90,.12)}',
+      U + ' #nav{flex-direction:row;margin:0 auto;width:100%;max-width:720px;gap:4px}',
+      U + ' .nav-item{flex:1;min-width:0;min-height:var(--leiste-h)}',
+      U + ' #fabNeu{right:max(16px,env(safe-area-inset-right));bottom:calc(var(--leiste-h) + 26px + env(safe-area-inset-bottom))}',
+      U + ' #kiKnopf{bottom:calc(var(--leiste-h) + 26px + env(safe-area-inset-bottom));right:calc(max(16px,env(safe-area-inset-right)) + 70px)}',
+      '@media (min-width:881px){' + U + ' #app{padding-bottom:calc(var(--leiste-h) + 26px + env(safe-area-inset-bottom))}' + U + ' #content{padding-bottom:84px}}',
+      '@media (max-width:880px){' + U + ' #content{padding-bottom:calc(var(--leiste-h) + 110px + env(safe-area-inset-bottom))}}',
+      /* RECHTS: senkrechte Leiste am rechten Rand, Platz im Layout reserviert */
+      R + ' #sidebar{top:0;bottom:0;right:0;left:auto;width:calc(var(--leiste-b) + env(safe-area-inset-right));display:flex;flex-direction:column;justify-content:center;' +
+        'padding:calc(10px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) 6px;' +
+        'border-radius:22px 0 0 22px;border:0;border-left:1px solid var(--kante);box-shadow:-8px 0 30px rgba(30,40,90,.12)}',
+      R + ' #nav{flex-direction:column;margin:0;width:100%;gap:4px}',
+      R + ' .nav-item{width:100%;min-height:58px}',
+      R + ' #app{padding-right:calc(var(--leiste-b) + env(safe-area-inset-right) + 14px)}',
+      R + ' #fabNeu{right:calc(var(--leiste-b) + env(safe-area-inset-right) + 16px);bottom:calc(18px + env(safe-area-inset-bottom))}',
+      R + ' #kiKnopf{right:calc(var(--leiste-b) + env(safe-area-inset-right) + 16px);bottom:calc(88px + env(safe-area-inset-bottom))}',
+      '@media (max-width:880px){' + R + ' #app{padding-right:calc(var(--leiste-b) + env(safe-area-inset-right))}' + R + ' #content{padding-bottom:100px}}',
+      '@media (max-height:480px){' + R + ' .nav-item{min-height:44px;padding:3px 2px}' + R + ' .nav-item .kurz{display:none}}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
   function istDunkel() { return document.documentElement.getAttribute('data-thema') === 'dunkel'; }
   function themaKnopf() {
     const mond = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 14.6A8.6 8.6 0 0 1 9.4 3.6a8.6 8.6 0 1 0 11 11z" fill="currentColor"/></svg>';
@@ -1369,6 +1436,12 @@ function starteApp() {
         return '<button class="btn' + (wahl === o[0] ? ' aktiv' : '') + '" data-thema-wahl="' + o[0] + '">' + o[1] + '</button>';
       }).join('') + '</div></div>';
 
+    h += '<div class="box"><h3>Position der Navigationsleiste</h3>' +
+      '<p>„Standard“ ist die bisherige Leiste: links am großen Bildschirm, unten als Kapsel am Handy.</p><div class="thema-wahl">' +
+      LEISTEN.map(function (o) {
+        return '<button class="btn' + (leistenPos() === o[0] ? ' aktiv' : '') + '" data-leiste-wahl="' + o[0] + '">' + o[1] + '</button>';
+      }).join('') + '</div></div>';
+
     h += '<div class="box"><h3>Daten</h3><p>Aktuell ' + anzahl + (anzahl === 1 ? ' Aufgabe' : ' Aufgaben') +
       ' und ' + module().length + ' Module auf diesem Gerät.</p>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
@@ -1415,7 +1488,7 @@ function starteApp() {
     nav.innerHTML = NAV.map(function (n) {
       const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
         n.icon.split(' M').map(function (p, i) { return '<path d="' + (i ? 'M' + p : p) + '"/>'; }).join('') + '</svg>';
-      return '<button class="nav-item' + (ansicht === n.id ? ' aktiv' : '') + '" data-ansicht="' + n.id + '">' +
+      return '<button class="nav-item' + (ansicht === n.id ? ' aktiv' : '') + '" data-ansicht="' + n.id + '" aria-label="' + n.text + '"' + (ansicht === n.id ? ' aria-current="page"' : '') + '>' +
         svg + '<span class="lang">' + n.text + '</span><span class="kurz">' + n.kurz + '</span></button>';
     }).join('') + '<span class="nav-linse" aria-hidden="true"></span>';
     nav.classList.add('mit-linse');
@@ -1451,7 +1524,8 @@ function starteApp() {
       return best;
     };
     nav.addEventListener('pointerdown', function (e) {
-      if (e.pointerType === 'mouse' || z || !window.matchMedia('(max-width:880px)').matches) return;
+      const pos = leistenPos();
+      if (e.pointerType === 'mouse' || z || pos === 'rechts' || (pos === 'standard' && !window.matchMedia('(max-width:880px)').matches)) return;
       z = { id: e.pointerId, x0: e.clientX, los: false };
     });
     nav.addEventListener('pointermove', function (e) {
@@ -1705,6 +1779,7 @@ function starteApp() {
       }
       if ((el = ziel('data-farbwelt-wahl'))) { farbweltSetzen(el.getAttribute('data-farbwelt-wahl')); return; }
       if ((el = ziel('data-thema-wahl'))) { themaSetzen(el.getAttribute('data-thema-wahl')); return; }
+      if ((el = ziel('data-leiste-wahl'))) { leisteSetzen(el.getAttribute('data-leiste-wahl')); return; }
       if (ziel('data-thema-umschalten')) { themaSetzen(istDunkel() ? 'hell' : 'dunkel'); return; }
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
       if (ziel('data-export')) { exportiere(); return; }
@@ -2042,6 +2117,7 @@ function starteApp() {
   }
 
   /* ---------- Geometrie ---------- */
+  function tourRechtsKante() { return leistenPos() === 'rechts' ? $('#sidebar').getBoundingClientRect().left : window.innerWidth; }   // linke Kante der rechten Leiste
   function tourMobil() { const f = $('#fabNeu'); return !!f && getComputedStyle(f).display !== 'none'; }
   function tourSichtbar(el) { return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'; }
   function tourRechteck(el, rand) {                 // Rechteck der Hervorhebung um ein Element (etwas Luft, passende Rundung)
@@ -2127,7 +2203,7 @@ function starteApp() {
     const T = tour, k = T.karte.getBoundingClientRect();
     const links = tourMobil() ? 12 : Math.max(12, $('#sidebar').getBoundingClientRect().right + 16);
     const oben = 12 + T.sicherOben, unten = k.top - 18;
-    return { x: links, y: oben, b: Math.max(200, window.innerWidth - 12 - links), h: Math.max(140, unten - oben) };
+    return { x: links, y: oben, b: Math.max(200, tourRechtsKante() - 12 - links), h: Math.max(140, unten - oben) };
   }
   /* Liegt das Ziel unter der Karte oder außerhalb des Bildschirms, rollt die Seite – die Hervorhebung bleibt dabei an „mit“ haften. */
   function tourInSicht(t, el, mit) {
@@ -2169,22 +2245,25 @@ function starteApp() {
     T.skip.classList.toggle('frei', gross);
     const heim = gross ? T.ebene : k.querySelector('.tour-knoepfe');
     if (T.skip.parentNode !== heim) heim.appendChild(T.skip);
-    const leiste = mobil ? Math.min($('#sidebar').getBoundingClientRect().top, $('#fabNeu').getBoundingClientRect().top) : vh;
+    const rk = tourRechtsKante();
+    const leiste = !mobil ? vh : leistenPos() === 'rechts' ? $('#fabNeu').getBoundingClientRect().top : Math.min($('#sidebar').getBoundingClientRect().top, $('#fabNeu').getBoundingClientRect().top);
     if (!gross) {
       k.style.left = k.style.width = T.skip.style.right = T.skip.style.bottom = '';
+      k.style.right = rk < vw ? Math.round(vw - rk + 10) + 'px' : '';
       const ki = document.getElementById('kiKnopf');
       k.style.bottom = Math.round(mobil ? vh - leiste + 12 : (tourSichtbar(ki) ? vh - ki.getBoundingClientRect().top + 16 : 24)) + 'px';
       return;
     }
     // „Tour überspringen“: unten rechts – über dem Plus-Knopf (Tab-Leiste) bzw. über dem KI-Knopf (Seitenleiste)
     const ki = document.getElementById('kiKnopf');
-    T.skip.style.right = (mobil ? 14 : 28) + 'px';
+    k.style.right = '';
+    T.skip.style.right = Math.round(vw - rk + (mobil ? 14 : 28)) + 'px';
     T.skip.style.bottom = Math.round(mobil ? vh - leiste + 12 : (tourSichtbar(ki) ? vh - ki.getBoundingClientRect().top + 14 : 28)) + 'px';
     const sk = T.skip.getBoundingClientRect();
     // Karte: mittig unter der Inhaltsspalte; auf hohen Bildschirmen nicht ganz unten, sondern nah am Geschehen
     const c = $('#content').getBoundingClientRect();
-    const mitte = mobil ? vw / 2 : c.left + Math.min(c.width, 1200) / 2;
-    const platz = mobil ? vw - 28 : c.width - 32;
+    const mitte = mobil ? rk / 2 : c.left + Math.min(c.width, 1200) / 2;
+    const platz = mobil ? rk - 28 : c.width - 32;
     const boden = mobil ? sk.top - 12 : vh - 28;                         // tiefste erlaubte Unterkante
     const setzen = function (breite) {
       k.style.width = Math.round(breite) + 'px';
@@ -2711,6 +2790,7 @@ function starteApp() {
 
   /* ---------- Start ---------- */
   themaAnwenden();
+  leisteAnwenden();
   ladeLokal();
   verdrahte();
   if (window.Notizen) {
@@ -2740,9 +2820,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 26.2;
+  const VERSION = 27;
   const NEUIGKEITEN = [
-    ['🧭', 'Bedienungstour verbessert', 'Die Tour startet jetzt zuverlässig direkt aus dem Willkommensfenster. Auf iPad und Laptop stehen die Erklärungen größer und mittig unter dem Geschehen.']
+    ['🧭', 'Position der Navigationsleiste', 'Unter Einstellungen wählst du jetzt, wo die Leiste sitzt: Standard, Unten oder Rechts.']
   ];
   function neuDlgStil() {                       // gemeinsamer Stil für kleine Hinweis-Fenster (Neuigkeiten, Tour-Einladung)
     if (document.getElementById('neuDlgStil')) return;
@@ -2799,7 +2879,7 @@ function starteApp() {
     let letzt = window.scrollY;
     window.addEventListener('scroll', function () {
       const y = window.scrollY, d = y - letzt;
-      if (tour) { letzt = y; return; }             // während der Tour bleibt die Leiste ruhig
+      if (tour || leistenPos() !== 'standard') { letzt = y; return; }             // während der Tour bleibt die Leiste ruhig
       if (Math.abs(d) < 8) return;
       document.documentElement.classList.toggle('leiste-klein', d > 0 && y > 80);
       letzt = y;
