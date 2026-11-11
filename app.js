@@ -302,24 +302,29 @@ function starteApp() {
   /* Stil in app.js, damit Markup und Aussehen immer zusammenpassen (auch bei gecachter alter index.html) */
   function leisteStil() {
     if (document.getElementById('leisteStil')) return;
-    const U = 'html[data-leiste="unten"]', R = 'html[data-leiste="rechts"]', B = 'html[data-leiste]';
+    const U = 'html[data-leiste="unten"]', R = 'html[data-leiste="rechts"]', B = 'html[data-leiste]', D = 'html[data-thema="dunkel"][data-leiste]';
     const st = document.createElement('style'); st.id = 'leisteStil';
     st.textContent = [
       ':root{--leiste-h:64px;--leiste-b:76px}',
       '@media (min-width:881px){:root{--leiste-b:92px}}',
       /* gemeinsam: Seitenleisten-Extras weg, eigener Plus-Knopf, kein Schrumpfen beim Scrollen */
       B + ' .marke,' + B + ' .marke-datum,' + B + ' .seiten-fuss,' + B + ' #neuBtnSeite,' + B + ' .seiten-module{display:none}',
+      /* Material: kräftiges Glas, leicht in der Akzentfarbe der Farbwelt getönt – hell und dunkel getrennt */
       B + ' #sidebar{position:fixed;z-index:30;width:auto;flex:none;overflow:visible;margin:0;transform:none!important;transition:none;' +
-        'background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%)}',
-      ':root[data-thema="dunkel"]' + B + ' #sidebar{background:rgba(22,24,40,.88)}',
+        'background:linear-gradient(rgba(var(--accent-rgb),.07),rgba(var(--accent-rgb),.07)),rgba(255,255,255,.82);' +
+        '-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%)}',
+      D + ' #sidebar{background:linear-gradient(rgba(var(--accent-rgb),.09),rgba(var(--accent-rgb),.09)),rgba(14,16,28,.86)}',
+      '@media (prefers-reduced-transparency:reduce),(prefers-contrast:more){' + B + ' #sidebar{-webkit-backdrop-filter:none;backdrop-filter:none;background:#FFFFFF}' + D + ' #sidebar{background:#12141F}}',
       B + ' .nav-item{flex-direction:column;justify-content:center;gap:4px;padding:6px 2px;text-align:center;border-radius:16px;font-size:11.5px;font-weight:500;' +
-        'color:var(--muted);touch-action:manipulation;-webkit-user-select:none;user-select:none}',
+        'color:var(--text);opacity:.78;touch-action:manipulation;-webkit-user-select:none;user-select:none}',
       B + ' .nav-item svg{width:23px;height:23px;flex:0 0 23px}',
       B + ' .nav-item .lang{display:none}',
       B + ' .nav-item .kurz{display:block;opacity:1!important;white-space:nowrap}',
-      B + ' .nav-item.aktiv{color:var(--accent);font-weight:650}',
-      ':root[data-thema="dunkel"]' + B + ' .nav-item.aktiv{color:var(--accent-hell)}',
-      B + ' .nav-linse{border:0;border-radius:16px;background:rgba(var(--accent-rgb),.14)!important;box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.22)!important}',
+      /* aktiver Tab: Akzentfarbe + getönte Fläche; inaktive Tabs in voller Textfarbe (leicht zurückgenommen) statt Grau */
+      B + ' .nav-item.aktiv{color:var(--accent-tief,var(--accent));font-weight:650;opacity:1}',
+      D + ' .nav-item.aktiv{color:var(--accent-hell,var(--accent))}',
+      B + ' .nav-linse{border:0;border-radius:16px;background:rgba(var(--accent-rgb),.16)!important;box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.28)!important}',
+      D + ' .nav-linse{background:rgba(var(--accent-rgb),.24)!important;box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.38)!important}',
       B + ' .nav-linse::before{display:none}',
       B + ' #fabNeu{display:flex;position:fixed;z-index:31;width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.45);color:var(--akzent-text,#fff);' +
         'align-items:center;justify-content:center;transform:none!important;background:linear-gradient(180deg,var(--accent-hell),var(--accent) 55%,var(--accent-tief));' +
@@ -2820,7 +2825,7 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 27;
+  const VERSION = 27.1;
   const NEUIGKEITEN = [
     ['🧭', 'Position der Navigationsleiste', 'Unter Einstellungen wählst du jetzt, wo die Leiste sitzt: Standard, Unten oder Rechts.']
   ];
