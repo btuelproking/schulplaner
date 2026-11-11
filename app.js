@@ -2396,11 +2396,11 @@ function starteApp() {
       await tourWarteAuf(t, ziel);
       await tourInSicht(t, ziel());
       if (!T.rm) await tourWarte(t, 700);            // erst erscheint die Ansicht …
+      tourText(0);                                   // Satz erscheint schon, während der Fokus sich zusammenzieht – Lesen und Bewegung überlappen
       await tourLochZu(t, ziel, 720, 'cubic-bezier(.77,0,.175,1)');   // … dann zieht sich der Fokus ruhig um die nächste Aufgabe zusammen
       document.documentElement.classList.remove('tour-auftritt');
       if (!T.rm) T.loch.classList.add('leuchtet');
-      tourText(0);
-      await tourRestLesen(t, 0, 1500);
+      await tourWarte(t, 1900);                      // ~2,6 s lesbar insgesamt, danach zügig weiter (vorher volle Lesezeit erst ab Ende der Bewegung)
     },
     /* 2 · Aufgaben und Module: am echten Plus-Knopf eine Aufgabe anlegen und einem Fach zuordnen */
     async function (t) {
@@ -2740,7 +2740,7 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 26.1;
+  const VERSION = 26.2;
   const NEUIGKEITEN = [
     ['🧭', 'Bedienungstour verbessert', 'Die Tour startet jetzt zuverlässig direkt aus dem Willkommensfenster. Auf iPad und Laptop stehen die Erklärungen größer und mittig unter dem Geschehen.']
   ];
