@@ -1478,20 +1478,21 @@ function starteApp() {
   }
 
   /* ---------- Navigation ---------- */
+  /* Ein Icon pro Tab (24er-Raster, 1,8er Strich, runde Enden) – gilt für alle Leisten-Positionen */
   const NAV = [
-    { id: 'heute', text: 'Tagesansicht', kurz: 'Heute', icon: 'M4 4h16v16H4z M4 9h16 M9 4v16' },
-    { id: 'kalender', text: 'Kalenderansicht', kurz: 'Kalender', icon: 'M3 5h18v16H3z M3 10h18 M8 3v4 M16 3v4' },
-    { id: 'module', text: 'Modulansicht', kurz: 'Module', icon: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z' },
-    { id: 'alle', text: 'Alle Aufgaben', kurz: 'Alle', icon: 'M4 6h16 M4 12h16 M4 18h16' },
-    { id: 'notizen', text: 'Notizbücher', kurz: 'Notizen', icon: 'M6 3h12a1 1 0 011 1v16a1 1 0 01-1 1H6z M6 3v18 M9.5 8h6 M9.5 11.5h6 M3.5 7h3 M3.5 12h3 M3.5 17h3' },
-    { id: 'einstellungen', text: 'Einstellungen', kurz: 'Sync', icon: 'M12 8a4 4 0 100 8 4 4 0 000-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3' }
+    { id: 'heute', text: 'Tagesansicht', kurz: 'Heute', icon: 'M8 12a4 4 0 108 0 4 4 0 10-8 0 M12 2.5v2 M12 19.5v2 M2.5 12h2 M19.5 12h2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4' },
+    { id: 'kalender', text: 'Kalenderansicht', kurz: 'Kalender', icon: 'M5.5 5h13A2.5 2.5 0 0121 7.5v11a2.5 2.5 0 01-2.5 2.5h-13A2.5 2.5 0 013 18.5v-11A2.5 2.5 0 015.5 5z M3 10h18 M8 3v4 M16 3v4 M7.5 14h1 M11.5 14h1 M15.5 14h1 M7.5 17.5h1 M11.5 17.5h1' },
+    { id: 'module', text: 'Modulansicht', kurz: 'Module', icon: 'M6 4h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z M15 4h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V6a2 2 0 012-2z M6 13h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2v-3a2 2 0 012-2z M15 13h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2v-3a2 2 0 012-2z' },
+    { id: 'alle', text: 'Alle Aufgaben', kurz: 'Alle', icon: 'M3.5 6.5l1.5 1.5 3-3 M3.5 12.5l1.5 1.5 3-3 M3.5 18.5l1.5 1.5 3-3 M11 6.5h9.5 M11 12.5h9.5 M11 18.5h9.5' },
+    { id: 'notizen', text: 'Notizbücher', kurz: 'Notizen', icon: 'M7 3h10.5A1.5 1.5 0 0119 4.5v15a1.5 1.5 0 01-1.5 1.5H7a2 2 0 01-2-2V5a2 2 0 012-2z M9 3v18 M12.5 8h3.5 M12.5 11.5h3.5' },
+    { id: 'einstellungen', text: 'Einstellungen', kurz: 'Sync', icon: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M13 7a2 2 0 104 0 2 2 0 10-4 0 M7 17a2 2 0 104 0 2 2 0 10-4 0' }
   ];
   /* Glas-Linse unter dem aktiven Tab: gleitet beim Wechsel wie ein Tropfen zum neuen Tab (wie bei iOS) */
   function zeichneNav() {
     const nav = $('#nav'), alt = nav.querySelector('.nav-linse');
     const vorher = alt && alt.offsetWidth ? { x: alt.offsetLeft, y: alt.offsetTop, b: alt.offsetWidth, h: alt.offsetHeight } : null;
     nav.innerHTML = NAV.map(function (n) {
-      const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
+      const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         n.icon.split(' M').map(function (p, i) { return '<path d="' + (i ? 'M' + p : p) + '"/>'; }).join('') + '</svg>';
       return '<button class="nav-item' + (ansicht === n.id ? ' aktiv' : '') + '" data-ansicht="' + n.id + '" aria-label="' + n.text + '"' + (ansicht === n.id ? ' aria-current="page"' : '') + '>' +
         svg + '<span class="lang">' + n.text + '</span><span class="kurz">' + n.kurz + '</span></button>';
@@ -2825,7 +2826,7 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 27.1;
+  const VERSION = 27.2;
   const NEUIGKEITEN = [
     ['🧭', 'Position der Navigationsleiste', 'Unter Einstellungen wählst du jetzt, wo die Leiste sitzt: Standard, Unten oder Rechts.']
   ];
