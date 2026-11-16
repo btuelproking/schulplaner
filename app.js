@@ -349,7 +349,10 @@ function starteApp() {
       R + ' #fabNeu{right:calc(var(--leiste-b) + env(safe-area-inset-right) + 16px);bottom:calc(18px + env(safe-area-inset-bottom))}',
       R + ' #kiKnopf{right:calc(var(--leiste-b) + env(safe-area-inset-right) + 16px);bottom:calc(88px + env(safe-area-inset-bottom))}',
       '@media (max-width:880px){' + R + ' #app{padding-right:calc(var(--leiste-b) + env(safe-area-inset-right))}' + R + ' #content{padding-bottom:100px}}',
-      '@media (max-height:480px){' + R + ' .nav-item{min-height:44px;padding:3px 2px}' + R + ' .nav-item .kurz{display:none}}'
+      '@media (max-height:480px){' + R + ' .nav-item{min-height:44px;padding:3px 2px}' + R + ' .nav-item .kurz{display:none}}',
+      /* 7 Tabs: in der schmalen Standard-Kapsel etwas kleinere Beschriftung, damit nichts abgeschnitten wird */
+      '@media (max-width:880px){html:not([data-leiste]) .nav-item{padding-left:0;padding-right:0}html:not([data-leiste]) .nav-item .kurz{font-size:10px;letter-spacing:-.02em;white-space:nowrap}}',
+      '@media (max-width:400px){' + U + ' .nav-item .kurz{font-size:10.5px;letter-spacing:-.02em}}'
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -735,6 +738,7 @@ function starteApp() {
     else if (ansicht === 'module') c.innerHTML = modulOffen ? htmlModulDetail() : htmlModule();
     else if (ansicht === 'alle') c.innerHTML = htmlAlle();
     else if (ansicht === 'notizen') c.innerHTML = htmlNotizen();
+    else if (ansicht === 'lernplan') { lernStil(); c.innerHTML = htmlLernplan(); }
     else c.innerHTML = htmlEinstellungen();
     if (ansicht === 'alle') {
       const s = $('#suchfeld');
@@ -1477,12 +1481,296 @@ function starteApp() {
     return h + '</div>';
   }
 
+  /* ============================================================
+     Lernplaner: Mindmap „wann arbeite ich woran?“
+     Einträge liegen getrennt von den Aufgaben in localStorage `schulplaner.lernplan`
+     (nur auf diesem Gerät). Ein verknüpfter Eintrag speichert nur die Aufgaben-ID –
+     Titel, Fach und Frist kommen immer frisch aus der Aufgabe.
+     ============================================================ */
+  const LP_KEY = 'schulplaner.lernplan';
+  let lpModus = 'woche', lpDatum = heuteISO(), lpOffen = {};
+  function lpLaden() {
+    try { const d = JSON.parse(localStorage.getItem(LP_KEY) || '{}'); return Array.isArray(d.eintraege) ? d.eintraege : []; } catch (e) { return []; }
+  }
+  function lpSpeichern(liste) {
+    try { localStorage.setItem(LP_KEY, JSON.stringify({ v: 1, eintraege: liste })); }
+    catch (e) { alert('Speichern im Browser fehlgeschlagen: ' + e.message); }
+  }
+  function lpWochenstart(iso) { const d = vonISO(iso); return tageDazu(iso, -((d.getDay() + 6) % 7)); }
+  function lpTage() {                               // sichtbare Tage: ganze Woche (Mo–So) oder nur der gewählte Tag
+    if (lpModus === 'tag') return [lpDatum];
+    const s = lpWochenstart(lpDatum); return [0, 1, 2, 3, 4, 5, 6].map(function (i) { return tageDazu(s, i); });
+  }
+  function lpKurz(iso) { const d = vonISO(iso); return WT_KURZ[(d.getDay() + 6) % 7] + ' ' + d.getDate() + '.'; }
+  function lpWochentag(iso) { return WOCHENTAGE[(vonISO(iso).getDay() + 6) % 7]; }
+  function lpLang(iso) { const d = vonISO(iso); return lpWochentag(iso) + ', ' + d.getDate() + '. ' + MONATE[d.getMonth()]; }
+  function lpFaellig(iso) {                         // „Fällig am Freitag“ / „Fällig heute“ / „Fällig am 21.11.“
+    const t = tageBis(iso);
+    if (t === 0) return 'Fällig heute';
+    if (t === 1) return 'Fällig morgen';
+    if (t > 1 && t < 7) return 'Fällig am ' + lpWochentag(iso);
+    const d = vonISO(iso); return 'Fällig am ' + d.getDate() + '.' + (d.getMonth() + 1) + '.';
+  }
+  /* Ein verknüpfter Eintrag bleibt stehen, auch wenn die Aufgabe inzwischen gelöscht ist – er zeigt das dann an. */
+  function lpEintragInfo(e) {
+    if (e.aufgabe_id) {
+      const t = aufgabeVon(e.aufgabe_id);
+      return { art: 'geplant', titel: t && !t.geloescht ? titelText(t) : 'Aufgabe gelöscht', farbe: t ? modulFarbe(t.modul_id) : '#9A9AA2',
+        fach: t ? modulName(t.modul_id) : '', frist: t && t.deadline ? lpFaellig(t.deadline) : '', fertig: !!(t && istFertig(t)), weg: !t || t.geloescht };
+    }
+    return { art: 'eigen', titel: String(e.titel || '').trim() || '(ohne Titel)', farbe: e.modul_id ? modulFarbe(e.modul_id) : null,
+      fach: e.modul_id ? modulName(e.modul_id) : '', frist: e.modus === 'bis' ? 'Ziel bis ' + lpWochentag(e.datum) : '', fertig: false, weg: false };
+  }
+  function lpEinplanen(aufgabeId, datum) {          // gleiche Aufgabe am gleichen Tag nur einmal
+    const liste = lpLaden();
+    if (liste.some(function (e) { return e.aufgabe_id === aufgabeId && e.datum === datum; })) return false;
+    liste.push({ id: uid(), aufgabe_id: aufgabeId, datum: datum, erstellt: jetztISO() });
+    lpSpeichern(liste); return true;
+  }
+
+  function lpBlatt(e) {                             // eingeplanter Eintrag oder eigenes Vorhaben
+    const i = lpEintragInfo(e);
+    return '<button type="button" class="lp-blatt ' + i.art + (i.fertig ? ' fertig' : '') + (i.weg ? ' weg' : '') + '" data-lp-bearbeiten="' + esc(e.id) + '"' +
+      (i.farbe ? ' style="--fach:' + farbeSicher(i.farbe) + '"' : '') + '>' +
+      '<span class="lp-art">' + (i.art === 'geplant' ? 'Eingeplant' : e.modus === 'bis' ? 'Ziel' : 'Vorhaben') + '</span>' +
+      '<span class="lp-titel">' + esc(i.titel) + '</span>' +
+      ((i.fach || i.frist) ? '<span class="lp-meta">' + (i.fach ? '<span class="mod-punkt" style="background:' + farbeSicher(i.farbe || '#9A9AA2') + '"></span>' + esc(i.fach) : '') +
+        (i.frist ? '<span class="lp-frist">' + esc(i.frist) + '</span>' : '') + '</span>' : '') + '</button>';
+  }
+  function lpVorschlag(t, geplant) {               // fällige Aufgabe: gestrichelt, mit „Einplanen“
+    const am = geplant.filter(function (e) { return e.aufgabe_id === t.id; }).map(function (e) { return lpKurz(e.datum); });
+    return '<div class="lp-blatt vorschlag" style="--fach:' + modulFarbe(t.modul_id) + '">' +
+      '<span class="lp-art">Fällig</span><span class="lp-titel">' + esc(titelText(t)) + '</span>' +
+      '<span class="lp-meta"><span class="mod-punkt" style="background:' + modulFarbe(t.modul_id) + '"></span>' + esc(modulName(t.modul_id)) +
+      (am.length ? '<span class="lp-frist ok">Eingeplant: ' + esc(am.join(', ')) + '</span>' : '') + '</span>' +
+      '<button type="button" class="btn btn-klein lp-einplanen" data-lp-einplanen="' + esc(t.id) + '">Einplanen</button></div>';
+  }
+  function htmlLernplan() {
+    const tage = lpTage(), von = tage[0], bis = tage[tage.length - 1], heuteIso = heuteISO();
+    const plan = lpLaden();
+    const offen = sortiere(aufgaben().filter(function (t) { return !istFertig(t) && t.deadline && t.deadline >= von && t.deadline <= bis; }));
+    const s = vonISO(von), e2 = vonISO(bis);
+    const wurzel = lpModus === 'tag' ? lpLang(von) + (von === heuteIso ? ' · Heute' : '')
+      : s.getDate() + '. ' + (s.getMonth() !== e2.getMonth() ? MONATE[s.getMonth()] + ' ' : '') + '– ' + e2.getDate() + '. ' + MONATE[e2.getMonth()];
+    let h = '<div class="seite lp-seite"><div class="kopf"><div><h1>Lernplaner</h1><div class="unter">Was ist fällig – und wann arbeitest du daran?</div></div>' +
+      '<div class="kopf-rechts">' + themaKnopf() + '<button class="btn btn-primary" data-lp-neu="1">' + ICON_PLUS + '<span>Eintrag hinzufügen</span></button></div></div>';
+    h += '<div class="lp-leiste"><div class="lp-segment" role="group" aria-label="Ansicht">' +
+      '<button type="button" class="' + (lpModus === 'tag' ? 'aktiv' : '') + '" data-lp-modus="tag" aria-pressed="' + (lpModus === 'tag') + '">Tag</button>' +
+      '<button type="button" class="' + (lpModus === 'woche' ? 'aktiv' : '') + '" data-lp-modus="woche" aria-pressed="' + (lpModus === 'woche') + '">Woche</button></div>' +
+      '<div class="lp-datum"><button type="button" class="pfeil" data-lp-schritt="-1" aria-label="' + (lpModus === 'tag' ? 'Vorheriger Tag' : 'Vorherige Woche') + '">‹</button>' +
+      '<label class="lp-datumwahl"><span class="vh">Datum wählen</span><input type="date" id="lpDatum" value="' + lpDatum + '"></label>' +
+      '<button type="button" class="pfeil" data-lp-schritt="1" aria-label="' + (lpModus === 'tag' ? 'Nächster Tag' : 'Nächste Woche') + '">›</button>' +
+      '<button type="button" class="btn btn-klein" data-lp-heute="1">Heute</button></div></div>';
+    h += '<div class="lp-legende" aria-hidden="true"><span><i class="l-vorschlag"></i>Fällig (Vorschlag)</span><span><i class="l-geplant"></i>Eingeplant</span><span><i class="l-eigen"></i>Eigenes Vorhaben</span></div>';
+
+    h += '<div class="lp-karte lp-' + lpModus + '"><div class="lp-wurzelzeile"><div class="lp-wurzel"><small>' + (lpModus === 'tag' ? 'Tag' : 'Woche') + '</small>' + esc(wurzel) + '</div></div><div class="lp-aeste">';
+    tage.forEach(function (iso) {
+      const geplant = plan.filter(function (e) { return e.datum === iso; });
+      const faellig = offen.filter(function (t) { return t.deadline === iso; });
+      const zu = lpModus === 'woche' && !lpOffen[iso] && !(iso === lpDatum && lpOffen[iso] === undefined);
+      const zahl = [geplant.length ? geplant.length + ' geplant' : '', faellig.length ? faellig.length + ' fällig' : ''].filter(Boolean).join(' · ');
+      h += '<section class="lp-ast' + (iso === heuteIso ? ' heute' : '') + (iso === lpDatum ? ' gewaehlt' : '') + (zu ? ' zu' : '') + '">' +
+        '<button type="button" class="lp-knoten" data-lp-tag="' + iso + '" aria-expanded="' + !zu + '">' +
+        '<span class="lp-wt">' + WT_KURZ[(vonISO(iso).getDay() + 6) % 7] + '</span><span class="lp-nr">' + vonISO(iso).getDate() + '</span>' +
+        '<span class="lp-zahl">' + (zahl || 'frei') + '</span><span class="lp-pfeil" aria-hidden="true"></span></button>';
+      h += '<div class="lp-zweige">';
+      h += geplant.map(lpBlatt).join('') + faellig.map(function (t) { return lpVorschlag(t, plan); }).join('');
+      if (!geplant.length && !faellig.length) h += '<div class="lp-leer">' + (lpModus === 'tag' ? 'Für diesen Tag ist noch nichts geplant und nichts fällig.' : 'Nichts geplant') + '</div>';
+      h += '<button type="button" class="lp-dazu" data-lp-neu="' + iso + '">+ Eintrag</button>';
+      h += '</div></section>';
+    });
+    h += '</div></div></div>';
+    return h;
+  }
+
+  /* ---------- Dialog: Einplanen, eigenes Vorhaben, Bearbeiten ---------- */
+  let lpDlg = null;
+  function lpDialog(art, wert) {
+    let d = document.getElementById('dlgLern');
+    if (!d) {
+      neuDlgStil();
+      d = document.createElement('dialog'); d.id = 'dlgLern'; d.className = 'neu-dlg lp-dlg';
+      document.body.appendChild(d);
+      d.addEventListener('click', function (ev) {
+        const z = ev.target.closest ? ev.target : null; if (!z) return;
+        if (z.closest('[data-lp-zu]')) d.close();
+        else if (z.closest('[data-lp-modusfeld]')) { lpDlg.modus = z.closest('[data-lp-modusfeld]').getAttribute('data-lp-modusfeld'); d.querySelectorAll('[data-lp-modusfeld]').forEach(function (b) { b.classList.toggle('aktiv', b.getAttribute('data-lp-modusfeld') === lpDlg.modus); b.setAttribute('aria-pressed', b.classList.contains('aktiv')); }); d.querySelector('#lpDLabel').textContent = lpDlg.modus === 'bis' ? 'Bis wann?' : 'Wann?'; }
+        else if (z.closest('[data-lp-speichern]')) lpDialogSpeichern();
+        else if (z.closest('[data-lp-entfernen]')) { lpSpeichern(lpLaden().filter(function (e) { return e.id !== lpDlg.id; })); d.close(); render(); }
+        else if (z.closest('[data-lp-aufgabe]')) { const id = lpDlg.aufgabe_id; d.close(); setTimeout(function () { oeffneAufgabe(id); }, 50); }
+      });
+    }
+    const e = art === 'bearbeiten' ? lpLaden().filter(function (x) { return x.id === wert; })[0] : null;
+    if (art === 'bearbeiten' && !e) return;
+    const aufgabeId = art === 'einplanen' ? wert : e && e.aufgabe_id;
+    const t = aufgabeId ? aufgabeVon(aufgabeId) : null;
+    // Vorschlag für das Arbeitsdatum: am Tag vor der Frist, aber nicht in der Vergangenheit
+    let datum = art === 'neu' ? (wert || lpDatum) : e ? e.datum : (t && t.deadline ? tageDazu(t.deadline, -1) : lpDatum);
+    if (art === 'einplanen' && datum < heuteISO()) datum = heuteISO();
+    lpDlg = { art: art, id: e ? e.id : null, aufgabe_id: aufgabeId || null, modus: e && e.modus === 'bis' ? 'bis' : 'am' };
+    const verknuepft = !!aufgabeId;
+    let h = '<div class="dlg-koerper"><h2>' + (art === 'einplanen' ? 'Einplanen' : art === 'neu' ? 'Eintrag hinzufügen' : verknuepft ? 'Eingeplante Aufgabe' : 'Vorhaben bearbeiten') + '</h2>';
+    if (verknuepft) {
+      h += '<div class="lp-dlg-aufgabe" style="--fach:' + (t ? modulFarbe(t.modul_id) : '#9A9AA2') + '"><b>' + esc(t ? titelText(t) : 'Aufgabe gelöscht') + '</b>' +
+        '<span>' + esc(t ? modulName(t.modul_id) : '') + (t && t.deadline ? ' · ' + esc(lpFaellig(t.deadline)) + ' (' + esc(kurzesDatum(t.deadline)) + ')' : '') + '</span></div>' +
+        '<p class="neu-unter">Die Frist der Aufgabe bleibt, wie sie ist. Du legst nur fest, wann du daran arbeitest.</p>';
+    } else {
+      h += '<div class="feld"><label for="lpTitel">Was hast du vor?</label><input id="lpTitel" type="text" maxlength="200" placeholder="z. B. 30 Minuten fürs Referat üben" value="' + esc(e ? e.titel : '') + '"></div>' +
+        '<div class="feld"><span class="lp-feldname">Art</span><div class="lp-segment breit" role="group" aria-label="Art">' +
+        '<button type="button" data-lp-modusfeld="am" class="' + (lpDlg.modus === 'am' ? 'aktiv' : '') + '" aria-pressed="' + (lpDlg.modus === 'am') + '">Am – geplante Aktivität</button>' +
+        '<button type="button" data-lp-modusfeld="bis" class="' + (lpDlg.modus === 'bis' ? 'aktiv' : '') + '" aria-pressed="' + (lpDlg.modus === 'bis') + '">Bis – Ziel mit Frist</button></div></div>' +
+        '<div class="feld"><label for="lpFach">Fach (optional)</label><select id="lpFach"></select></div>';
+    }
+    h += '<div class="feld"><label for="lpDDatum" id="lpDLabel">' + (verknuepft ? 'An welchem Tag arbeitest du daran?' : lpDlg.modus === 'bis' ? 'Bis wann?' : 'Wann?') + '</label>' +
+      '<input id="lpDDatum" type="date" value="' + datum + '"></div><div class="lp-fehler" role="alert"></div></div>';
+    h += '<div class="dlg-fuss">' + (e ? '<button type="button" class="btn btn-danger" data-lp-entfernen="1">Aus dem Plan entfernen</button>' : '') +
+      '<div class="rechts">' + (e && verknuepft && t ? '<button type="button" class="btn" data-lp-aufgabe="1">Aufgabe öffnen</button>' : '') +
+      '<button type="button" class="btn" data-lp-zu="1">Abbrechen</button><button type="button" class="btn btn-primary" data-lp-speichern="1">' + (art === 'einplanen' ? 'Einplanen' : 'Speichern') + '</button></div></div>';
+    d.innerHTML = h;
+    const fach = d.querySelector('#lpFach');
+    if (fach) { fuelleAuswahl(fach, module(), e ? e.modul_id || '' : '', 'Kein Fach'); auswahlAufbereiten(d); }
+    if (!d.open) d.showModal();
+  }
+  function lpDialogSpeichern() {
+    const d = document.getElementById('dlgLern'), z = lpDlg;
+    const datum = d.querySelector('#lpDDatum').value, fehler = d.querySelector('.lp-fehler');
+    const titelFeld = d.querySelector('#lpTitel'), titel = titelFeld ? titelFeld.value.trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) { fehler.textContent = 'Bitte ein Datum wählen.'; return; }
+    if (titelFeld && !titel) { fehler.textContent = 'Bitte beschreibe kurz, was du vorhast.'; titelFeld.focus(); return; }
+    const liste = lpLaden();
+    if (z.art === 'einplanen') {
+      if (!lpEinplanen(z.aufgabe_id, datum)) { fehler.textContent = 'Diese Aufgabe ist an diesem Tag schon eingeplant.'; return; }
+    } else if (z.art === 'neu') {
+      liste.push({ id: uid(), titel: titel, modus: z.modus, datum: datum, modul_id: d.querySelector('#lpFach').value || null, erstellt: jetztISO() });
+      lpSpeichern(liste);
+    } else {
+      const e = liste.filter(function (x) { return x.id === z.id; })[0]; if (!e) { d.close(); return; }
+      if (e.aufgabe_id && liste.some(function (x) { return x !== e && x.aufgabe_id === e.aufgabe_id && x.datum === datum; })) { fehler.textContent = 'An diesem Tag ist die Aufgabe schon eingeplant.'; return; }
+      e.datum = datum;                              // verschieben
+      if (!e.aufgabe_id) { e.titel = titel; e.modus = z.modus; e.modul_id = d.querySelector('#lpFach').value || null; }
+      lpSpeichern(liste);
+    }
+    d.close();
+    lpDatum = datum; lpOffen[datum] = true;          // dorthin springen, wo der Eintrag jetzt steht
+    if (lpModus === 'woche' && lpWochenstart(datum) !== lpWochenstart(lpTage()[0])) lpOffen = {};
+    lpOffen[datum] = true;
+    render();
+  }
+  function lpKlick(ziel) {                          // aus verdrahte(): true, wenn der Klick dem Lernplaner gehörte
+    let el;
+    if ((el = ziel('data-lp-modus'))) { lpModus = el.getAttribute('data-lp-modus'); render(); return true; }
+    if ((el = ziel('data-lp-schritt'))) { lpDatum = tageDazu(lpDatum, Number(el.getAttribute('data-lp-schritt')) * (lpModus === 'tag' ? 1 : 7)); lpOffen = {}; render(); return true; }
+    if (ziel('data-lp-heute')) { lpDatum = heuteISO(); lpOffen = {}; render(); return true; }
+    if ((el = ziel('data-lp-tag'))) {
+      const iso = el.getAttribute('data-lp-tag'), karte = el.closest('.lp-karte');
+      if (lpModus === 'woche' && karte && karte.classList.contains('lp-woche') && getComputedStyle(karte.querySelector('.lp-aeste')).display === 'grid') { lpDatum = iso; lpModus = 'tag'; render(); return true; }
+      if (lpModus === 'woche') { const zu = el.closest('.lp-ast').classList.contains('zu'); lpOffen[iso] = zu; lpDatum = iso; render(); }
+      return true;
+    }
+    if ((el = ziel('data-lp-einplanen'))) { lpDialog('einplanen', el.getAttribute('data-lp-einplanen')); return true; }
+    if ((el = ziel('data-lp-bearbeiten'))) { lpDialog('bearbeiten', el.getAttribute('data-lp-bearbeiten')); return true; }
+    if ((el = ziel('data-lp-neu'))) { const v = el.getAttribute('data-lp-neu'); lpDialog('neu', /^\d{4}-/.test(v) ? v : null); return true; }
+    return false;
+  }
+  function lernStil() {
+    if (document.getElementById('lernStil')) return;
+    const st = document.createElement('style'); st.id = 'lernStil';
+    st.textContent = [
+      ':root{--lp-linie:rgba(60,60,90,.22)}:root[data-thema="dunkel"]{--lp-linie:rgba(255,255,255,.22)}',
+      '.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}',
+      '.lp-leiste{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:2px 0 10px}',
+      '.lp-segment{display:inline-flex;padding:3px;border-radius:12px;background:rgba(127,127,140,.14)}',
+      '.lp-segment button{min-height:38px;padding:0 16px;border:0;border-radius:9px;background:none;color:var(--text);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer;touch-action:manipulation}',
+      '.lp-segment button.aktiv{background:var(--glas-fest,#fff);color:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.12)}',
+      ':root[data-thema="dunkel"] .lp-segment button.aktiv{background:rgba(255,255,255,.14);color:var(--accent-hell,var(--accent))}',
+      '.lp-segment.breit{display:flex}.lp-segment.breit button{flex:1;padding:0 8px;font-size:13.5px}',
+      '.lp-datum{display:flex;align-items:center;gap:6px}',
+      '.lp-datum input{font:inherit;font-size:16px;min-height:40px;padding:0 10px;border-radius:12px;border:1px solid var(--kante);background:var(--glas-stark);color:var(--text)}',
+      '.lp-legende{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);margin:0 0 14px}',
+      '.lp-legende span{display:inline-flex;align-items:center;gap:6px}.lp-legende i{width:16px;height:11px;border-radius:4px}',
+      '.l-vorschlag{border:1.5px dashed var(--muted2)}.l-geplant{background:var(--glas-stark);border:1px solid var(--kante);box-shadow:inset 3px 0 0 var(--accent)}.l-eigen{background:rgba(var(--accent-rgb),.16)}',
+      /* Karte: Wurzel → Äste (Tage) → Blätter (Einträge); Linien nur aus Rahmen, damit sich nichts überlagert */
+      '.lp-karte{container-type:inline-size;position:relative}',
+      '.lp-wurzel{display:inline-flex;flex-direction:column;padding:10px 16px;border-radius:16px;background:var(--accent);color:var(--akzent-text,#fff);font-weight:700;font-size:16px;line-height:1.25;position:relative;z-index:1}',
+      '.lp-wurzel small{font-size:11.5px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.05em}',
+      /* Stamm: jeder Ast zeichnet sein Stück, der letzte nur bis zu seinem Knoten */
+      '.lp-aeste{position:relative;margin:0 0 0 22px;padding-top:12px}',
+      '.lp-aeste::before{content:"";position:absolute;left:0;top:0;height:12px;border-left:2px solid var(--lp-linie)}',
+      '.lp-ast{position:relative;padding:6px 0 6px 18px;border-left:2px solid var(--lp-linie)}',
+      '.lp-ast::before{content:"";position:absolute;left:0;top:30px;width:18px;border-top:2px solid var(--lp-linie)}',
+      '.lp-ast:last-child{border-left-color:transparent}',
+      '.lp-ast:last-child::after{content:"";position:absolute;left:-2px;top:0;height:32px;border-left:2px solid var(--lp-linie)}',
+      '.lp-knoten{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 12px 6px 6px;border-radius:14px;border:1px solid var(--kante);background:var(--glas-stark);color:var(--text);font:inherit;text-align:left;cursor:pointer;touch-action:manipulation}',
+      '.lp-wt{font-size:13px;font-weight:600;color:var(--muted);width:24px;text-align:center}',
+      '.lp-nr{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:16px;font-variant-numeric:tabular-nums;background:rgba(127,127,140,.12)}',
+      '.lp-ast.heute .lp-nr{background:var(--accent);color:var(--akzent-text,#fff)}',
+      '.lp-ast.gewaehlt .lp-knoten{border-color:rgba(var(--accent-rgb),.6);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16)}',
+      '.lp-zahl{flex:1;font-size:13.5px;color:var(--muted)}',
+      '.lp-pfeil{width:9px;height:9px;border-right:2px solid var(--muted2);border-bottom:2px solid var(--muted2);transform:rotate(45deg);margin:-4px 4px 0 0;transition:transform 180ms var(--ease-out)}',
+      '.lp-ast.zu .lp-pfeil{transform:rotate(-45deg);margin-top:0}',
+      '.lp-karte.lp-tag .lp-pfeil{display:none}',
+      '.lp-ast.zu .lp-zweige{display:none}',
+      '.lp-zweige{position:relative;margin:2px 0 4px 22px;padding:8px 0 0 0;display:flex;flex-direction:column;gap:8px}',
+      '.lp-zweige > *{position:relative;margin-left:18px}',
+      '.lp-zweige > *::before{content:"";position:absolute;left:-18px;top:22px;width:16px;border-top:2px solid var(--lp-linie)}',
+      '.lp-zweige > *::after{content:"";position:absolute;left:-18px;top:-8px;bottom:0;border-left:2px solid var(--lp-linie)}',
+      '.lp-zweige > :last-child::after{bottom:auto;height:32px}',
+      /* Blätter: Vorschlag gestrichelt, eingeplant fest mit Fachstreifen, eigenes Vorhaben getönt */
+      '.lp-blatt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:calc(100% - 16px);padding:9px 12px 10px 14px;border-radius:14px;text-align:left;font:inherit;color:var(--text);min-height:44px;cursor:pointer;overflow-wrap:break-word;-webkit-hyphens:auto;hyphens:auto}',
+      '.lp-blatt.geplant{border:1px solid var(--kante);background:var(--glas-stark);box-shadow:inset 4px 0 0 var(--fach,var(--accent))}',
+      '.lp-blatt.eigen{border:1px solid rgba(var(--accent-rgb),.25);background:rgba(var(--accent-rgb),.12);box-shadow:inset 4px 0 0 var(--fach,var(--accent))}',
+      '.lp-blatt.vorschlag{border:1.5px dashed var(--muted2);background:transparent;cursor:default}',
+      '.lp-blatt.fertig .lp-titel{text-decoration:line-through;color:var(--muted)}',
+      '.lp-blatt.weg{opacity:.6}',
+      '.lp-art{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}',
+      '.lp-blatt.eigen .lp-art{color:var(--accent-tief,var(--accent))}:root[data-thema="dunkel"] .lp-blatt.eigen .lp-art{color:var(--accent-hell,var(--accent))}',
+      '.lp-titel{font-size:15px;font-weight:600;line-height:1.3}',
+      '.lp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13px;color:var(--muted)}',
+      '.lp-meta .mod-punkt{margin-right:-4px}',
+      '.lp-frist{font-weight:600;color:#B4570A}:root[data-thema="dunkel"] .lp-frist{color:#FFB35C}.lp-frist.ok{color:var(--done,#3E9C5C)}',
+      '.lp-einplanen{margin-top:6px;min-height:36px}',
+      '.lp-leer{font-size:13.5px;color:var(--muted);padding:8px 0}',
+      '.lp-dazu{align-self:flex-start;min-height:40px;padding:0 12px;border-radius:12px;border:1px dashed rgba(var(--accent-rgb),.45);background:none;color:var(--accent);font:inherit;font-size:14px;font-weight:600;cursor:pointer}',
+      ':root[data-thema="dunkel"] .lp-dazu{color:var(--accent-hell,var(--accent))}',
+      '@media (pointer:coarse){.lp-einplanen,.lp-dazu,.lp-segment button{min-height:44px}}',
+      /* Breite Fläche (Tablet quer / Desktop): Tage nebeneinander als verbundene Kette unter der Wurzel */
+      '@container (min-width:860px){' +
+        '.lp-karte.lp-woche .lp-wurzelzeile{text-align:center}' +
+        '.lp-karte.lp-woche .lp-aeste{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin:0;padding-top:30px;border:0;text-align:left}' +
+        '.lp-karte.lp-woche .lp-aeste::before{content:"";position:absolute;top:14px;left:calc(100%/14);right:calc(100%/14);border-top:2px solid var(--lp-linie)}' +
+        '.lp-karte.lp-woche .lp-aeste::after{content:"";position:absolute;top:0;left:50%;height:14px;border-left:2px solid var(--lp-linie)}' +
+        '.lp-karte.lp-woche .lp-ast,.lp-karte.lp-woche .lp-ast:last-child{padding:0;margin:0;border:0}.lp-karte.lp-woche .lp-aeste::before{display:none}' +
+        '.lp-karte.lp-woche .lp-ast::before{left:50%;top:-16px;width:0;height:16px;border-top:0;border-left:2px solid var(--lp-linie)}' +
+        '.lp-karte.lp-woche .lp-ast::after{display:none}' +
+        '.lp-karte.lp-woche .lp-knoten{flex-direction:column;gap:2px;padding:8px 4px;text-align:center;justify-content:center}' +
+        '.lp-karte.lp-woche .lp-wt{width:auto}.lp-karte.lp-woche .lp-zahl{flex:none;font-size:12px}.lp-karte.lp-woche .lp-pfeil{display:none}' +
+        '.lp-karte.lp-woche .lp-ast.zu .lp-zweige{display:flex}' +
+        /* in der schmalen Spalte: Einträge volle Breite, nur eine Linie vom Tagesknoten nach unten */
+        '.lp-karte.lp-woche .lp-zweige{margin:0;padding-top:14px}' +
+        '.lp-karte.lp-woche .lp-zweige::before{content:"";position:absolute;left:50%;top:0;height:14px;border-left:2px solid var(--lp-linie)}' +
+        '.lp-karte.lp-woche .lp-zweige > *{margin-left:0}.lp-karte.lp-woche .lp-zweige > *::before,.lp-karte.lp-woche .lp-zweige > *::after{display:none}' +
+        '.lp-karte.lp-woche .lp-blatt{width:100%;padding:8px 9px 9px 11px}.lp-karte.lp-woche .lp-titel{font-size:14px}' +
+        '.lp-karte.lp-woche .lp-art{font-size:10px;letter-spacing:.03em}.lp-karte.lp-woche .lp-meta{font-size:12px}' +
+        '.lp-karte.lp-woche .lp-einplanen{padding:0 10px;font-size:13px}.lp-karte.lp-woche .lp-dazu,.lp-karte.lp-woche .lp-leer{align-self:stretch;text-align:center}}',
+      '@container (min-width:700px){.lp-karte.lp-tag .lp-zweige{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 0}.lp-karte.lp-tag .lp-dazu{grid-column:1/-1}}',
+      /* Dialog */
+      '.lp-dlg .feld{margin-bottom:14px}.lp-dlg input[type=text],.lp-dlg input[type=date]{font-size:16px}',
+      '.lp-feldname{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}',
+      '.lp-dlg-aufgabe{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:14px;background:var(--glas-stark);border:1px solid var(--kante);box-shadow:inset 4px 0 0 var(--fach);margin:8px 0 6px}',
+      '.lp-dlg-aufgabe span{font-size:13.5px;color:var(--muted)}',
+      '.lp-fehler{color:var(--danger,#D93A3F);font-size:14px;min-height:1.2em}',
+      '.lp-dlg .dlg-fuss{flex-wrap:wrap}.lp-dlg .dlg-fuss .btn{flex:0 0 auto}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
   /* ---------- Navigation ---------- */
   /* Ein Icon pro Tab (24er-Raster, 1,8er Strich, runde Enden) – gilt für alle Leisten-Positionen */
   const NAV = [
     { id: 'heute', text: 'Tagesansicht', kurz: 'Heute', icon: 'M8 12a4 4 0 108 0 4 4 0 10-8 0 M12 2.5v2 M12 19.5v2 M2.5 12h2 M19.5 12h2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4' },
     { id: 'kalender', text: 'Kalenderansicht', kurz: 'Kalender', icon: 'M5.5 5h13A2.5 2.5 0 0121 7.5v11a2.5 2.5 0 01-2.5 2.5h-13A2.5 2.5 0 013 18.5v-11A2.5 2.5 0 015.5 5z M3 10h18 M8 3v4 M16 3v4 M7.5 14h1 M11.5 14h1 M15.5 14h1 M7.5 17.5h1 M11.5 17.5h1' },
     { id: 'module', text: 'Modulansicht', kurz: 'Module', icon: 'M6 4h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z M15 4h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V6a2 2 0 012-2z M6 13h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2v-3a2 2 0 012-2z M15 13h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2v-3a2 2 0 012-2z' },
+    { id: 'lernplan', text: 'Lernplaner', kurz: 'Lernplan', icon: 'M9 12a3 3 0 106 0 3 3 0 10-6 0 M3 5.5a2 2 0 104 0 2 2 0 10-4 0 M17 5.5a2 2 0 104 0 2 2 0 10-4 0 M3 18.5a2 2 0 104 0 2 2 0 10-4 0 M17 18.5a2 2 0 104 0 2 2 0 10-4 0 M6.6 7l3 3 M17.4 7l-3 3 M6.6 17l3-3 M17.4 17l-3-3' },
     { id: 'alle', text: 'Alle Aufgaben', kurz: 'Alle', icon: 'M3.5 6.5l1.5 1.5 3-3 M3.5 12.5l1.5 1.5 3-3 M3.5 18.5l1.5 1.5 3-3 M11 6.5h9.5 M11 12.5h9.5 M11 18.5h9.5' },
     { id: 'notizen', text: 'Notizbücher', kurz: 'Notizen', icon: 'M7 3h10.5A1.5 1.5 0 0119 4.5v15a1.5 1.5 0 01-1.5 1.5H7a2 2 0 01-2-2V5a2 2 0 012-2z M9 3v18 M12.5 8h3.5 M12.5 11.5h3.5' },
     { id: 'einstellungen', text: 'Einstellungen', kurz: 'Sync', icon: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M13 7a2 2 0 104 0 2 2 0 10-4 0 M7 17a2 2 0 104 0 2 2 0 10-4 0' }
@@ -1790,6 +2078,7 @@ function starteApp() {
       if (ziel('data-sync-jetzt')) { synchronisiere(true); return; }
       if (ziel('data-export')) { exportiere(); return; }
       if (ziel('data-neuigkeiten')) { neuigkeitenZeigen(); return; }
+      if (lpKlick(ziel)) return;
       if (ziel('data-tour-start')) { tourAnfordern({ klick: ev }); return; }
       if (ziel('data-import')) { $('#importDatei').click(); return; }
       if ((el = ziel('data-farbe'))) { modulState.farbe = el.getAttribute('data-farbe'); zeichneFarben(); return; }
@@ -1815,6 +2104,7 @@ function starteApp() {
         dlgState.subs[Number(t.getAttribute('data-sub'))].erledigt = t.checked;
         zeichneUnteraufgaben(); return;
       }
+      if (t.id === 'lpDatum' && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { lpDatum = t.value; lpOffen = {}; render(); return; }
       if (t.id === 'fltModul') { filter.modul = t.value; render(); return; }
       if (t.id === 'fltStatus') { filter.status = t.value; render(); return; }
       if (t.id === 'fltPrio') { filter.prio = t.value; render(); return; }
@@ -1850,6 +2140,7 @@ function starteApp() {
     $('#mLoeschen').addEventListener('click', modulLoeschen);
     function neuKnopf() {
       if (ansicht === 'notizen' && window.Notizen) { window.Notizen.neu(); return; }
+      if (ansicht === 'lernplan') { lernStil(); lpDialog('neu', null); return; }
       oeffneAufgabe(null, { datum: ansicht === 'kalender' ? kalGewaehlt : heute });
     }
     $('#neuBtnSeite').addEventListener('click', function () { oeffneAufgabe(null, { datum: ansicht === 'kalender' ? kalGewaehlt : heute }); });
@@ -2826,9 +3117,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 27.2;
+  const VERSION = 28;
   const NEUIGKEITEN = [
-    ['🧭', 'Position der Navigationsleiste', 'Unter Einstellungen wählst du jetzt, wo die Leiste sitzt: Standard, Unten oder Rechts.']
+    ['🗺️', 'Lernplaner', 'Neuer Tab „Lernplan“: Sieh als Mindmap, was diese Woche fällig ist, plane Aufgaben auf Arbeitstage ein und trag eigene Vorhaben ein.']
   ];
   function neuDlgStil() {                       // gemeinsamer Stil für kleine Hinweis-Fenster (Neuigkeiten, Tour-Einladung)
     if (document.getElementById('neuDlgStil')) return;
