@@ -49,7 +49,7 @@
   const STIFTE = STIFTARTEN;
   const TINTE = ['fueller', 'kuli', 'pinsel', 'bleistift', 'formstift'];
   const NAMEN = { fueller: 'Füller', kuli: 'Kugelschreiber', pinsel: 'Pinselstift', bleistift: 'Bleistift', marker: 'Textmarker', tape: 'Tape',
-    formstift: 'Formstift', radierer: 'Radierer', lasso: 'Lasso', text: 'Textfeld', formen: 'Formen', zettel: 'Notizzettel', laser: 'Laserpointer',
+    formstift: 'Formstift', radierer: 'Radierer', lasso: 'Lasso', kistift: 'KI-Korrekturstift', text: 'Textfeld', formen: 'Formen', zettel: 'Notizzettel', laser: 'Laserpointer',
     stift: 'Stift', bild: 'Bild', audio: 'Aufnahme' };
   const FORM_ARTEN = [['auto', 'Automatisch'], ['linie', 'Linie'], ['pfeil', 'Pfeil'], ['winkel', 'Winkelpfeil'], ['bogen', 'Bogenpfeil'],
     ['rechteck', 'Rechteck'], ['kreis', 'Kreis'], ['dreieck', 'Dreieck'], ['raute', 'Raute'], ['rund', 'Abgerundetes Rechteck']];
@@ -1252,9 +1252,18 @@
       const q = E.lasso.pts;
       ctx.beginPath(); ctx.moveTo(q[0], q[1]);
       for (let i = 2; i < q.length; i += 2) ctx.lineTo(q[i], q[i + 1]);
-      ctx.lineWidth = 1.4 / s; ctx.setLineDash([6 / s, 5 / s]);
-      ctx.strokeStyle = '#0A7AFF'; ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(10,122,255,.06)'; ctx.fill();
+      ctx.lineWidth = (E.lasso.ki ? 2 : 1.4) / s; ctx.setLineDash([6 / s, 5 / s]);
+      ctx.strokeStyle = E.lasso.ki ? '#8E5BFF' : '#0A7AFF'; ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = E.lasso.ki ? 'rgba(142,91,255,.08)' : 'rgba(10,122,255,.06)'; ctx.fill();
+    }
+    if (E.kiMarke) {                                                         // KI-Markierung: nur Anzeige, wird nie gespeichert
+      seitenTransform(ctx, E.kiMarke.i);
+      const q = E.kiMarke.pts;
+      ctx.beginPath(); ctx.moveTo(q[0], q[1]);
+      for (let i = 2; i < q.length; i += 2) ctx.lineTo(q[i], q[i + 1]);
+      ctx.closePath();
+      ctx.lineWidth = 2 / s; ctx.setLineDash([6 / s, 5 / s]); ctx.strokeStyle = '#8E5BFF'; ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(142,91,255,.08)'; ctx.fill();
     }
     if (E.auswahl) {
       const a = E.auswahl, seite = E.seiten[a.i];
@@ -1469,6 +1478,11 @@
       const h = auswahlTreffer(pt);
       if (h) { E.ziehen = { art: h, start: pt, dx: 0, dy: 0, k: 1 }; auswahlVerstecken(); plane('haupt', 'live', 'text'); return; }
       auswahlAufheben();
+    }
+    if (W.wz === 'kistift') {                                          // nur markieren – geht auch im Nur-lesen-Modus
+      kiZurueck(); lassoStart(w);
+      if (E.lasso) { E.lasso.ki = true; E.lasso.rechteck = false; }
+      return;
     }
     if (E.nurLesen) { E.leseTipp = { pt: pt, letzt: pt }; return; }
     if (W.wz === 'text') { E.textTipp = { pt: pt }; return; }
@@ -2182,6 +2196,177 @@
     planeAlles(); toast('Seite geleert', true);
   }
 
+  /* ---------- KI-Korrekturstift ----------
+     Umkreisen → Vorschau → erst auf „Mit KI prüfen“ wird NUR der umkreiste Ausschnitt (außen weiß) gesendet.
+     Die Markierung ist nur Anzeige (E.kiMarke) und landet nie in den Seiten. */
+  const KI_PRUEF_SCHEMA = { type: 'OBJECT', properties: {
+    art: { type: 'STRING', enum: ['rechnung_weg', 'aufgabe', 'text', 'unleserlich'] },
+    gelesen: { type: 'STRING' }, ergebnis: { type: 'STRING' }, richtig: { type: 'BOOLEAN' },
+    fehler_stelle: { type: 'STRING' }, korrektur: { type: 'STRING' }, erklaerung: { type: 'STRING' },
+    korrekturen: { type: 'ARRAY', items: { type: 'OBJECT', properties: { falsch: { type: 'STRING' }, richtig: { type: 'STRING' }, grund: { type: 'STRING' } } } },
+    unklar: { type: 'STRING' } }, required: ['art'] };
+  const KI_PRUEF_TEXT = 'Du prüfst einen Ausschnitt aus dem Notizbuch eines Schülers (Handschrift, getippter Text oder PDF). Antworte auf Deutsch, kurz und freundlich, als JSON.\n' +
+    'Entscheide art:\n' +
+    '- "rechnung_weg": eine Rechnung MIT Lösungsweg. Rechne selbst nach. ergebnis = richtiges Endergebnis, richtig = ob der Weg des Schülers stimmt. ' +
+    'Wenn nicht: fehler_stelle = die ERSTE falsche Zeile bzw. der erste falsche Schritt (wörtlich), korrektur = dieser Schritt richtig gerechnet, erklaerung = ein Satz warum.\n' +
+    '- "aufgabe": eine Rechnung oder Frage OHNE Lösung. ergebnis = Ergebnis bzw. Antwort, erklaerung = kurze Erklärung (höchstens 3 Sätze).\n' +
+    '- "text": ein Text. korrekturen = Liste konkreter Sprach- oder Inhaltsfehler mit falsch (Originalstelle), richtig, grund. Keine Fehler = leere Liste.\n' +
+    '- "unleserlich": wenn du den Inhalt nicht sicher lesen kannst. unklar = welche Stelle unklar ist. Rate nicht.\n' +
+    'gelesen = was du im Ausschnitt gelesen hast (wörtlich, Formeln einfach, z. B. 3x + 4 = 19).';
+  function kiZurueck() {
+    if (!E) return;
+    if (E.kiAbbruch) { try { E.kiAbbruch.abort(); } catch (x) { } }
+    E.kiAbbruch = null; E.kiLaeuft = false; E.kiMarke = null; E.kiBild = null;
+    const k = E.el.root.querySelector(':scope > .nb-kik'); if (k) k.remove();
+    plane('live');
+  }
+  async function kiAusschnitt(m) {                  // Bild nur vom umkreisten Bereich, außerhalb weiß
+    const seite = E.seiten[m.i], q = m.pts;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < q.length; i += 2) { x0 = Math.min(x0, q[i]); x1 = Math.max(x1, q[i]); y0 = Math.min(y0, q[i + 1]); y1 = Math.max(y1, q[i + 1]); }
+    x0 = Math.max(0, x0 - 4); y0 = Math.max(0, y0 - 4); x1 = Math.min(seite.b, x1 + 4); y1 = Math.min(seite.h, y1 + 4);
+    const bw = x1 - x0, bh = y1 - y0;
+    if (bw < 12 || bh < 12) return null;
+    await bilderVorbereiten(seite);
+    const k = Math.min(4, Math.max(1.5, 1200 / Math.max(bw, bh)));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bw * k)); c.height = Math.max(1, Math.round(bh * k));
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    ctx.beginPath(); ctx.moveTo(q[0], q[1]);
+    for (let i = 2; i < q.length; i += 2) ctx.lineTo(q[i], q[i + 1]);
+    ctx.closePath(); ctx.clip();
+    zeichneSeite(ctx, seite, k, { papier: true, mitText: true, bildHolen: function (id) { const e = BILDER.get(id); return e && e.img; } });
+    return c;
+  }
+  async function kiAuswahlFertig(l) {
+    if (l.pts.length < 8) { plane('live'); toast('Umkreise den Bereich, den die KI prüfen soll.'); return; }
+    E.kiMarke = { i: l.i, pts: l.pts };
+    plane('live');
+    let c = null;
+    try { c = await kiAusschnitt(E.kiMarke); } catch (x) { c = null; }
+    if (!E || !E.kiMarke) return;
+    if (!c) { kiZurueck(); toast('Bitte einen etwas größeren Bereich umkreisen.'); return; }
+    E.kiBild = c.toDataURL('image/jpeg', 0.88);
+    kiKarte('<div class="nb-kik-vorschau"><img alt="Markierter Ausschnitt" src="' + E.kiBild + '"></div>' +
+      '<p class="nb-kik-klein">Nur dieser Ausschnitt wird an die KI geschickt – erst wenn du auf „Mit KI prüfen“ tippst.</p>',
+      '<button class="btn" data-kik="neu">Neu auswählen</button><button class="btn btn-primary" data-kik="pruefen">Mit KI prüfen</button>');
+  }
+  function kiKarte(inhalt, knoepfe, titel) {
+    let k = E.el.root.querySelector(':scope > .nb-kik');
+    if (!k) {
+      kiStil();
+      k = document.createElement('section'); k.className = 'nb-kik'; k.setAttribute('role', 'dialog'); k.setAttribute('aria-label', 'KI-Korrektur');
+      E.el.root.appendChild(k);
+      k.addEventListener('click', function (e) {
+        const b = e.target.closest('[data-kik]'); if (!b) return;
+        const a = b.getAttribute('data-kik');
+        if (a === 'pruefen') kiPruefen(); else if (a === 'zu') kiZurueck(); else if (a === 'neu') { kiZurueck(); toast('Umkreise den Bereich neu.'); }
+      });
+      ['pointerdown', 'wheel', 'touchstart'].forEach(function (t) { k.addEventListener(t, function (e) { e.stopPropagation(); }, { passive: true }); });
+    }
+    k.innerHTML = '<header><span class="nb-kik-logo">' + icon('kistift') + '</span><b>' + esc(titel || 'KI-Korrektur') + '</b>' +
+      '<button class="nb-kik-zu" data-kik="zu" aria-label="Schließen">' + icon('schliessen') + '</button></header>' +
+      '<div class="nb-kik-inhalt">' + inhalt + '</div><footer>' + (knoepfe || '') + '</footer>';
+  }
+  async function kiPruefen() {
+    if (!E || E.kiLaeuft || !E.kiBild) return;       // keine doppelten Anfragen
+    if (!window.Assistent || !window.Assistent.verfuegbar || !window.Assistent.verfuegbar()) {
+      kiKarte('<p class="nb-kik-hinweis">Die KI ist noch nicht eingerichtet. Trag deinen Gemini-Schlüssel unter <b>Einstellungen → KI-Assistent</b> ein, dann kann der Korrekturstift prüfen.</p>',
+        '<button class="btn" data-kik="zu">Schließen</button>');
+      return;
+    }
+    if (navigator.onLine === false) {
+      kiKarte('<p class="nb-kik-hinweis">Keine Internetverbindung. Prüfe die Verbindung und versuch es dann nochmal.</p>',
+        '<button class="btn" data-kik="zu">Schließen</button><button class="btn btn-primary" data-kik="pruefen">Nochmal versuchen</button>');
+      return;
+    }
+    E.kiLaeuft = true;
+    const knopf = E.el.root.querySelector('.nb-kik [data-kik="pruefen"]');
+    if (knopf) { knopf.disabled = true; knopf.innerHTML = '<span class="nb-kreisel"></span>Prüfe …'; }
+    const ed = E, ctrl = window.AbortController ? new AbortController() : null;
+    E.kiAbbruch = ctrl;
+    let antwort = null, fehler = null;
+    try {
+      antwort = await window.Assistent.gemini({
+        teile: [{ text: KI_PRUEF_TEXT }, { inlineData: { mimeType: 'image/jpeg', data: E.kiBild.slice(E.kiBild.indexOf(',') + 1) } }],
+        schema: KI_PRUEF_SCHEMA, signal: ctrl ? ctrl.signal : undefined,
+        warten: function () { const b = ed.el.root.querySelector('.nb-kik [data-kik="pruefen"]'); if (b) b.innerHTML = '<span class="nb-kreisel"></span>Limit erreicht – kurz warten …'; }
+      });
+    } catch (e) { fehler = e; }
+    if (E !== ed || !E.kiLaeuft) return;            // inzwischen geschlossen oder neu markiert
+    E.kiLaeuft = false; E.kiAbbruch = null;
+    if (fehler) {
+      const st = fehler && fehler.status;
+      const text = st === 400 || st === 401 || st === 403 ? 'Der Gemini-Schlüssel wurde abgelehnt. Prüfe ihn unter Einstellungen → KI-Assistent.'
+        : 'Die KI ist gerade nicht erreichbar. Bitte versuch es gleich nochmal.';
+      kiKarte('<p class="nb-kik-hinweis">' + esc(text) + '</p>', '<button class="btn" data-kik="zu">Schließen</button><button class="btn btn-primary" data-kik="pruefen">Nochmal versuchen</button>');
+      return;
+    }
+    kiAntwortZeigen(antwort || {});
+  }
+  function kiAntwortZeigen(a) {
+    const zeile = function (label, wert, klasse) { return wert ? '<div class="nb-kik-zeile ' + (klasse || '') + '"><span>' + esc(label) + '</span><b>' + esc(wert) + '</b></div>' : ''; };
+    let h = '', titel = 'KI-Korrektur';
+    if (a.art === 'rechnung_weg') {
+      titel = 'Rechnung geprüft';
+      h += '<span class="nb-kik-status ' + (a.richtig === false ? 'fehler' : 'ok') + '">' + (a.richtig === false ? 'Fehler gefunden' : 'Richtig gerechnet') + '</span>';
+      h += zeile('Ergebnis', a.ergebnis);
+      if (a.richtig === false) h += zeile('Erste falsche Stelle', a.fehler_stelle, 'falsch') + zeile('Richtig wäre', a.korrektur, 'richtig');
+      if (a.erklaerung) h += '<p>' + esc(a.erklaerung) + '</p>';
+    } else if (a.art === 'aufgabe') {
+      titel = 'Antwort';
+      h += zeile('Ergebnis', a.ergebnis);
+      if (a.erklaerung) h += '<p>' + esc(a.erklaerung) + '</p>';
+    } else if (a.art === 'text') {
+      titel = 'Text geprüft';
+      const k = Array.isArray(a.korrekturen) ? a.korrekturen.filter(function (x) { return x && (x.falsch || x.richtig); }) : [];
+      h += k.length ? '<ul class="nb-kik-liste">' + k.map(function (x) {
+        return '<li><s>' + esc(x.falsch || '') + '</s> → <b>' + esc(x.richtig || '') + '</b>' + (x.grund ? '<small>' + esc(x.grund) + '</small>' : '') + '</li>';
+      }).join('') + '</ul>' : '<span class="nb-kik-status ok">Keine Fehler gefunden</span>';
+    } else {
+      titel = 'Nicht sicher lesbar';
+      h += '<p class="nb-kik-hinweis">' + (a.unklar ? 'Unklar ist: <b>' + esc(a.unklar) + '</b>. ' : '') + 'Bitte umkreise den Bereich noch einmal – etwas größer und deutlicher.</p>';
+    }
+    if (a.gelesen && a.art !== 'unleserlich') h += '<p class="nb-kik-klein">Gelesen: ' + esc(a.gelesen) + '</p>';
+    h += '<p class="nb-kik-klein">Die Antwort ändert deine Notizen nicht.</p>';
+    kiKarte(h, '<button class="btn" data-kik="neu">Neue Auswahl</button><button class="btn btn-primary" data-kik="zu">Fertig</button>', titel);
+  }
+  function kiStil() {
+    if (document.getElementById('nbKiStil')) return;
+    const st = document.createElement('style'); st.id = 'nbKiStil';
+    st.textContent = [
+      '.nb-kik{position:absolute;z-index:60;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(460px,calc(100% - 24px));max-height:min(70%,560px);display:flex;flex-direction:column;',
+      '  border-radius:22px;border:1px solid var(--kante);background:#FBFBFE;color:#1D1D1F;box-shadow:0 22px 60px rgba(20,25,60,.32);animation:nb-kik-auf 220ms cubic-bezier(.23,1,.32,1) both}',
+      ':root[data-thema="dunkel"] .nb-kik{background:#1E2036;color:#F2F2F7;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
+      '@keyframes nb-kik-auf{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}',
+      '@media (prefers-reduced-motion:reduce){.nb-kik{animation:none}}',
+      '.nb-kik header{display:flex;align-items:center;gap:10px;padding:12px 10px 8px 14px}',
+      '.nb-kik header b{flex:1;font-size:16px}',
+      '.nb-kik-logo{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;color:#fff;background:linear-gradient(140deg,#8E6BFF,#5B6CFF)}.nb-kik-logo svg{width:18px;height:18px}',
+      '.nb-kik-zu{width:44px;height:44px;border:0;background:none;color:inherit;display:grid;place-items:center;cursor:pointer;border-radius:12px}.nb-kik-zu svg{width:20px;height:20px}',
+      '.nb-kik-inhalt{overflow-y:auto;padding:0 16px 6px;font-size:15.5px;line-height:1.45;-webkit-overflow-scrolling:touch}',
+      '.nb-kik-inhalt p{margin:8px 0}',
+      '.nb-kik-vorschau{border-radius:14px;border:1px solid rgba(127,127,140,.25);background:#fff;padding:6px;display:flex;justify-content:center}',
+      '.nb-kik-vorschau img{max-width:100%;max-height:200px;object-fit:contain;display:block}',
+      '.nb-kik-klein{font-size:13px;color:#6E6E78}:root[data-thema="dunkel"] .nb-kik-klein{color:#A8A8B4}',
+      '.nb-kik-hinweis{font-size:15px}',
+      '.nb-kik-status{display:inline-block;margin:2px 0 6px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700}',
+      '.nb-kik-status.ok{background:rgba(52,199,89,.15);color:#1E7A3A}.nb-kik-status.fehler{background:rgba(255,59,48,.13);color:#B42318}',
+      ':root[data-thema="dunkel"] .nb-kik-status.ok{color:#6EE08E}:root[data-thema="dunkel"] .nb-kik-status.fehler{color:#FF8A80}',
+      '.nb-kik-zeile{display:flex;flex-direction:column;gap:1px;padding:8px 12px;border-radius:12px;background:rgba(127,127,140,.10);margin:6px 0}',
+      '.nb-kik-zeile span{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6E6E78}',
+      '.nb-kik-zeile b{font-size:17px;overflow-wrap:anywhere}',
+      '.nb-kik-zeile.falsch{background:rgba(255,59,48,.10)}.nb-kik-zeile.richtig{background:rgba(52,199,89,.12)}',
+      '.nb-kik-liste{margin:6px 0;padding-left:18px}.nb-kik-liste li{margin:6px 0}.nb-kik-liste small{display:block;color:#6E6E78;font-size:13px}',
+      '.nb-kik footer{display:flex;gap:8px;justify-content:flex-end;padding:10px 14px 14px;flex-wrap:wrap}',
+      '.nb-kik footer .btn{min-height:44px}.nb-kik footer .btn[disabled]{opacity:.75}',
+      '.nb-kik .nb-kreisel{display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:-2px}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
   /* ---------- Lasso ---------- */
   function lassoStart(w) {
     const i = seiteBei(w.x, w.y);
@@ -2199,6 +2384,7 @@
   function lassoEnde() {
     const l = E.lasso;
     E.lasso = null;
+    if (l && l.ki) { kiAuswahlFertig(l); return; }
     if (!l || l.pts.length < 8) { plane('live'); return; }
     const seite = E.seiten[l.i], poly = l.pts, lf = W.lassoFilter || {};
     const sel = { i: l.i, s: new Set(), t: new Set(), b: new Set(), bb: null };
@@ -2867,6 +3053,7 @@
     suche: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
     ordner: '<path d="M3.5 7.5a2 2 0 012-2h4l2 2.2h7a2 2 0 012 2v8.3a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/>',
     lesezeichen: '<path d="M7 3.5h10a1 1 0 011 1V20.5l-6-4.2-6 4.2V4.5a1 1 0 011-1z"/>',
+    kistift: '<path d="M4 20l1.2-4.2L15.6 5.4l3 3L8.2 18.8z"/><path d="M13.6 7.4l3 3"/><path d="M19 13.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" fill="currentColor" stroke="none"/>',
     lineal: '<path d="M2.8 16.2L16.2 2.8l5 5L7.8 21.2z"/><path d="M6.6 12.4l1.9 1.9M9.1 9.9l1.2 1.2M11.6 7.4l1.9 1.9M14.1 4.9l1.2 1.2"/>',
     funke: '<path d="M12 3c.5 3.8 1.5 5.8 2.8 7.1C16.1 11.5 18.2 12.5 22 13c-3.8.5-5.9 1.5-7.2 2.9-1.3 1.3-2.3 3.3-2.8 7.1-.5-3.8-1.5-5.8-2.8-7.1C7.9 14.5 5.8 13.5 2 13c3.8-.5 5.9-1.5 7.2-2.9C10.5 8.8 11.5 6.8 12 3z"/>',
     griff: '<circle cx="9" cy="7" r="1.3" fill="currentColor"/><circle cx="15" cy="7" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="17" r="1.3" fill="currentColor"/><circle cx="15" cy="17" r="1.3" fill="currentColor"/>'
@@ -2879,7 +3066,7 @@
     E.el.undo.disabled = !E.undo.length;
     E.el.redo.disabled = !E.redo.length;
   }
-  const HAUPT = ['lasso', 'stift', 'radierer', 'text', 'bild', 'formen', 'zettel', 'laser', 'audio'];
+  const HAUPT = ['lasso', 'kistift', 'stift', 'radierer', 'text', 'bild', 'formen', 'zettel', 'laser', 'audio'];
   function hauptLeisteHTML() {
     return HAUPT.map(function (h) {
       const ic = h === 'stift' ? W.letzterStift : h;
@@ -2892,7 +3079,7 @@
     if (wz === 'stift') wz = W.letzterStift || W.stiftArt;
     if (wz === 'bild') { E.el.bildDatei.click(); return; }
     if (wz === 'audio') { audioUmschalten(); return; }
-    if (W.wz !== wz) { textBeenden(); auswahlAufheben(); }
+    if (W.wz !== wz) { textBeenden(); auswahlAufheben(); kiZurueck(); }
     if (wz === 'radierer' && W.wz !== 'radierer') W.vorRadierer = W.wz;
     W.wz = wz;
     if (STIFTGRUPPE.indexOf(wz) >= 0) W.letzterStift = wz;
@@ -2961,6 +3148,8 @@
         return '<button class="nb-uwz' + (W.formArt === f[0] ? ' aktiv' : '') + '" data-nb-formart="' + f[0] + '" title="' + f[1] + '">' + icon('f_' + f[0]) + '</button>';
       }).join('') + '</div>' + trenner() + breitenHTML('formen') + trenner() + farbenHTML('formen', W.farbe.formen) +
         '<button class="nb-mini' + (W.formFuellen ? ' aktiv' : '') + '" data-nb-formfuellung="1" title="Füllung">' + icon('fuellen') + '</button>';
+    } else if (wz === 'kistift') {
+      h = '<span class="nb-name">KI-Korrekturstift</span><span class="nb-tipp">Umkreise eine Rechnung, Frage oder einen Text – die Markierung wird nicht gespeichert.</span>';
     } else if (wz === 'zettel') {
       h = '<span class="nb-name">Notizzettel</span>' + farbenHTML('zettel', W.farbe.zettel) + '<span class="nb-tipp">Auf die Seite tippen, um einen Zettel anzulegen</span>';
     } else if (wz === 'laser') {
@@ -5337,6 +5526,18 @@
     });
   }
 
+  function ordnerWahlZeichnen() {                   // Liste der vorhandenen Ordner + „Kein Ordner“, gewählter markiert
+    if (!dlg) return;
+    const liste = ordnerListe(), jetzt = dlg.querySelector('#nbOrdner').value.trim(), knopf = dlg.querySelector('#nbOrdnerKnopf');
+    knopf.hidden = !liste.length;
+    knopf.textContent = jetzt && liste.indexOf(jetzt) >= 0 ? 'Ordner: ' + jetzt : 'Ordner auswählen';
+    dlg.querySelector('#nbOrdnerWahl').innerHTML = [''].concat(liste).map(function (o) {
+      const an = o === jetzt;
+      return '<button type="button" class="nb-ordneroption' + (an ? ' aktiv' : '') + '" role="option" aria-selected="' + an + '" data-ordner="' + esc(o) + '">' +
+        (o ? icon('ordner') + '<span>' + esc(o) + '</span>' : '<span>Kein Ordner</span>') + '</button>';
+    }).join('');
+  }
+
   /* ---------- Dialog: Notizbuch anlegen / bearbeiten ---------- */
   let dlg = null, dlgZustand = null;
   function dialogBauen() {
@@ -5349,7 +5550,9 @@
         '<div class="feld"><label for="nbTitel">Name</label><input id="nbTitel" type="text" maxlength="80" placeholder="z. B. Mathe Mitschrift"></div>' +
         '<div class="feld"><label for="nbModul">Modul</label><select id="nbModul"></select></div>' +
         '<div class="feld"><label for="nbOrdner">Ordner <span class="nb-optional">(optional, z. B. Schuljahr 2026/27)</span></label>' +
-          '<input id="nbOrdner" type="text" maxlength="60" list="nbOrdnerListe" placeholder="Kein Ordner"><datalist id="nbOrdnerListe"></datalist></div>' +
+          '<div class="nb-ordnerzeile"><input id="nbOrdner" type="text" maxlength="60" placeholder="Kein Ordner – oder neuen Namen eingeben">' +
+          '<button type="button" class="btn nb-ordnerknopf" id="nbOrdnerKnopf" aria-expanded="false" aria-controls="nbOrdnerWahl">Ordner auswählen</button></div>' +
+          '<div class="nb-ordnerwahl" id="nbOrdnerWahl" role="listbox" aria-label="Vorhandene Ordner" hidden></div></div>' +
         '<div class="feld"><label>Cover</label><div class="nb-farbwahl" id="nbCover"></div></div>' +
         '<div class="feld"><label id="nbFormatLabel">Format</label><div class="nb-formatwahl" id="nbFormat"></div></div>' +
         '<div class="feld nb-nur-neu"><label>Papier</label><button type="button" class="nb-vorlage-wahl" id="nbVorlage"><canvas></canvas><span><b></b><small></small></span><em>Ändern</em></button></div>' +
@@ -5383,6 +5586,17 @@
       q('#nbPdfName').textContent = d ? d.name : '';
       if (d && !q('#nbTitel').value.trim()) q('#nbTitel').value = d.name.replace(/\.pdf$/i, '');
     });
+    /* Ordner: sichtbare Auswahl statt Browser-Vorschlagsliste (die gibt es am iPad nicht, am Laptop nur als kleiner Pfeil) */
+    q('#nbOrdnerKnopf').addEventListener('click', function () {
+      const w = q('#nbOrdnerWahl'), auf = w.hidden;
+      w.hidden = !auf; this.setAttribute('aria-expanded', String(auf));
+    });
+    q('#nbOrdnerWahl').addEventListener('click', function (e) {
+      const b = e.target.closest('[data-ordner]'); if (!b) return;
+      q('#nbOrdner').value = b.getAttribute('data-ordner');
+      ordnerWahlZeichnen(); q('#nbOrdnerWahl').hidden = true; q('#nbOrdnerKnopf').setAttribute('aria-expanded', 'false');
+    });
+    q('#nbOrdner').addEventListener('input', ordnerWahlZeichnen);
     q('#nbAbbrechen').addEventListener('click', function () { dlg.close(); });
     q('#nbSpeichern').addEventListener('click', dialogSpeichern);
     q('#nbTitel').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); dialogSpeichern(); } });
@@ -5425,7 +5639,9 @@
     dlgZustand = b ? { id: b.id, cover: b.cover || 0, vorlage: b.vorlage, papier: b.papier, format: b.format || 'a4', quer: !!b.quer, pdf: null }
       : { id: null, cover: Math.floor(Math.random() * 8), vorlage: W.vorlage || 'liniert', papier: W.papier || 'weiss', format: W.format || 'a4', quer: false, pdf: null };
     dlg.querySelector('#nbOrdner').value = b ? (b.ordner || '') : (ordnerOffen && ordnerOffen !== '__ohne__' ? ordnerOffen : '');
-    dlg.querySelector('#nbOrdnerListe').innerHTML = ordnerListe().map(function (o) { return '<option value="' + esc(o) + '"></option>'; }).join('');
+    dlg.querySelector('#nbOrdnerWahl').hidden = true;
+    dlg.querySelector('#nbOrdnerKnopf').setAttribute('aria-expanded', 'false');
+    ordnerWahlZeichnen();
     dlg.querySelector('#nbFormatLabel').textContent = b ? 'Format für neue Seiten' : 'Format';
     dlg.querySelector('.nb-dlg-titel').textContent = b ? 'Notizbuch bearbeiten' : 'Neues Notizbuch';
     dlg.querySelector('#nbTitel').value = b ? b.titel : '';
@@ -5812,6 +6028,17 @@ body>.nb-fortschritt{position:fixed;z-index:120}
 .nb-format-bild{display:block;background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);border-radius:2px}
 .nb-format-a4{width:21px;height:30px} .nb-format-a5{width:15px;height:21px}
 .nb-optional{font-weight:400;color:var(--muted2)}
+.nb-ordnerzeile{display:flex;gap:8px;align-items:stretch}
+.nb-ordnerzeile input{flex:1;min-width:0}
+.nb-ordnerknopf{flex:0 0 auto;min-height:44px;max-width:48%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--accent);font-weight:600}
+:root[data-thema="dunkel"] .nb-ordnerknopf{color:var(--accent-hell,var(--accent))}
+.nb-ordnerknopf[hidden]{display:none}
+.nb-ordnerzeile .btn.nb-ordnerknopf{min-height:44px;height:auto}
+.nb-ordnerwahl{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.nb-ordnerwahl[hidden]{display:none}
+.nb-ordneroption{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--kante);background:var(--glas-stark);color:var(--text);font:inherit;font-size:15px;cursor:pointer;touch-action:manipulation}
+.nb-ordneroption svg{width:18px;height:18px;color:var(--muted)}
+.nb-ordneroption.aktiv{border-color:rgba(var(--accent-rgb),.6);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16);color:var(--accent);font-weight:600}
 /* Editor: Lesezeichen, Lineal, Übersicht */
 .nb-lz-knopf.gesetzt{color:#FF3B30}
 .nb-lz-knopf.gesetzt svg path{fill:currentColor}

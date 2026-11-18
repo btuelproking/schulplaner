@@ -435,7 +435,7 @@ function starteApp() {
     return zeilen && zeilen.length ? zeilen[0] : null;
   }
   async function fernSpeichern() {
-    return rpc('daten_speichern', { p_schluessel: cfg.code, p_inhalt: { module: daten.module, aufgaben: daten.aufgaben } });
+    return rpc('daten_speichern', { p_schluessel: cfg.code, p_inhalt: { module: daten.module, aufgaben: daten.aufgaben, lernplan: lpAlle() } });
   }
 
   function planeSync() {
@@ -457,14 +457,20 @@ function starteApp() {
       const fern = await fernLaden();
       const fernDaten = fern && fern.inhalt ? fern.inhalt : { module: [], aufgaben: [] };
       const zusammen = aufraeumen(vereinigeDoppelteModule(datenZusammenfuehren(daten, fernDaten)), heute);
+      // Lernplaner: eigene Liste im selben Datensatz, gleiche Regeln (neuere Änderung gewinnt, Löschmarken)
+      const lpLokal = lpAlle(), lpFern = Array.isArray(fernDaten.lernplan) ? fernDaten.lernplan : [];
+      const lpZusammen = aufraeumen({ aufgaben: lpDoppelteWeg(lpZusammenfuehren(lpLokal, lpFern)) }, heute).aufgaben;
+      const lpText = function (l) { return vergleichbar({ module: [], aufgaben: l }); };
+      const lpLokalNeu = lpText(lpZusammen) !== lpText(lpLokal), lpFernNeu = lpText(lpZusammen) !== lpText(lpFern);
       const lokalNeu = !gleich(zusammen, daten);
-      const fernNeu = !gleich(zusammen, fernDaten);
+      const fernNeu = !gleich(zusammen, fernDaten) || lpFernNeu;
       daten = zusammen;
       speichereLokal();
+      if (lpLokalNeu) lpSchreiben(lpZusammen);
       if (fernNeu) await fernSpeichern();
       letzterSync = new Date();
       setzeStatus('gruen', 'Synchron (' + uhrzeit(letzterSync) + ')');
-      if (lokalNeu) render();
+      if (lokalNeu || (lpLokalNeu && ansicht === 'lernplan')) render();
       return true;
     } catch (e) {
       setzeStatus('rot', 'Sync-Fehler');
@@ -1489,12 +1495,35 @@ function starteApp() {
      ============================================================ */
   const LP_KEY = 'schulplaner.lernplan';
   let lpModus = 'woche', lpDatum = heuteISO(), lpOffen = {};
-  function lpLaden() {
+  /* Für den Abgleich: Einträge haben `geaendert`; Entfernen setzt eine Löschmarke (`geloescht`) statt zu löschen,
+     damit das andere Gerät den Eintrag beim nächsten Abgleich nicht wieder zurückbringt. */
+  function lpAlle() {
     try { const d = JSON.parse(localStorage.getItem(LP_KEY) || '{}'); return Array.isArray(d.eintraege) ? d.eintraege : []; } catch (e) { return []; }
   }
-  function lpSpeichern(liste) {
-    try { localStorage.setItem(LP_KEY, JSON.stringify({ v: 1, eintraege: liste })); }
-    catch (e) { alert('Speichern im Browser fehlgeschlagen: ' + e.message); }
+  function lpLaden() { return lpAlle().filter(function (e) { return !e.geloescht; }); }
+  function lpSchreiben(liste) {                      // ohne Sync-Anstoß (für den Abgleich selbst)
+    try { localStorage.setItem(LP_KEY, JSON.stringify({ v: 1, eintraege: liste })); return true; }
+    catch (e) { alert('Speichern im Browser fehlgeschlagen: ' + e.message); return false; }
+  }
+  function lpSpeichern(liste) { if (lpSchreiben(liste)) planeSync(); }
+  function lpZusammenfuehren(a, b) {                // neuere Änderung gewinnt; bei gleicher Zeit gewinnt das Entfernen
+    const k = new Map();
+    (a || []).concat(b || []).forEach(function (e) {
+      if (!e || !e.id) return;
+      const alt = k.get(e.id), g = String(e.geaendert || ''), ga = alt ? String(alt.geaendert || '') : null;
+      if (!alt || g > ga || (g === ga && e.geloescht && !alt.geloescht)) k.set(e.id, e);
+    });
+    return Array.from(k.values());
+  }
+  /* nach dem Zusammenführen: dieselbe Aufgabe am selben Tag (auf zwei Geräten getrennt eingeplant) nur einmal behalten */
+  function lpDoppelteWeg(liste) {
+    const gesehen = {};
+    liste.slice().sort(function (a, b) { return String(a.id) < String(b.id) ? -1 : 1; }).forEach(function (e) {
+      if (e.geloescht || !e.aufgabe_id) return;
+      const k = e.aufgabe_id + '|' + e.datum;
+      if (gesehen[k]) { e.geloescht = true; e.geaendert = jetztISO(); } else gesehen[k] = true;
+    });
+    return liste;
   }
   function lpWochenstart(iso) { const d = vonISO(iso); return tageDazu(iso, -((d.getDay() + 6) % 7)); }
   function lpTage() {                               // sichtbare Tage: ganze Woche (Mo–So) oder nur der gewählte Tag
@@ -1522,9 +1551,9 @@ function starteApp() {
       fach: e.modul_id ? modulName(e.modul_id) : '', frist: e.modus === 'bis' ? 'Ziel bis ' + lpWochentag(e.datum) : '', fertig: false, weg: false };
   }
   function lpEinplanen(aufgabeId, datum) {          // gleiche Aufgabe am gleichen Tag nur einmal
-    const liste = lpLaden();
-    if (liste.some(function (e) { return e.aufgabe_id === aufgabeId && e.datum === datum; })) return false;
-    liste.push({ id: uid(), aufgabe_id: aufgabeId, datum: datum, erstellt: jetztISO() });
+    const liste = lpAlle();
+    if (liste.some(function (e) { return !e.geloescht && e.aufgabe_id === aufgabeId && e.datum === datum; })) return false;
+    liste.push({ id: uid(), aufgabe_id: aufgabeId, datum: datum, erstellt: jetztISO(), geaendert: jetztISO(), geloescht: false });
     lpSpeichern(liste); return true;
   }
 
@@ -1596,7 +1625,11 @@ function starteApp() {
         if (z.closest('[data-lp-zu]')) d.close();
         else if (z.closest('[data-lp-modusfeld]')) { lpDlg.modus = z.closest('[data-lp-modusfeld]').getAttribute('data-lp-modusfeld'); d.querySelectorAll('[data-lp-modusfeld]').forEach(function (b) { b.classList.toggle('aktiv', b.getAttribute('data-lp-modusfeld') === lpDlg.modus); b.setAttribute('aria-pressed', b.classList.contains('aktiv')); }); d.querySelector('#lpDLabel').textContent = lpDlg.modus === 'bis' ? 'Bis wann?' : 'Wann?'; }
         else if (z.closest('[data-lp-speichern]')) lpDialogSpeichern();
-        else if (z.closest('[data-lp-entfernen]')) { lpSpeichern(lpLaden().filter(function (e) { return e.id !== lpDlg.id; })); d.close(); render(); }
+        else if (z.closest('[data-lp-entfernen]')) {
+          const alle = lpAlle(), e = alle.filter(function (x) { return x.id === lpDlg.id; })[0];
+          if (e) { e.geloescht = true; e.geaendert = jetztISO(); lpSpeichern(alle); }
+          d.close(); render();
+        }
         else if (z.closest('[data-lp-aufgabe]')) { const id = lpDlg.aufgabe_id; d.close(); setTimeout(function () { oeffneAufgabe(id); }, 50); }
       });
     }
@@ -1637,16 +1670,16 @@ function starteApp() {
     const titelFeld = d.querySelector('#lpTitel'), titel = titelFeld ? titelFeld.value.trim() : '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) { fehler.textContent = 'Bitte ein Datum wählen.'; return; }
     if (titelFeld && !titel) { fehler.textContent = 'Bitte beschreibe kurz, was du vorhast.'; titelFeld.focus(); return; }
-    const liste = lpLaden();
+    const liste = lpAlle();
     if (z.art === 'einplanen') {
       if (!lpEinplanen(z.aufgabe_id, datum)) { fehler.textContent = 'Diese Aufgabe ist an diesem Tag schon eingeplant.'; return; }
     } else if (z.art === 'neu') {
-      liste.push({ id: uid(), titel: titel, modus: z.modus, datum: datum, modul_id: d.querySelector('#lpFach').value || null, erstellt: jetztISO() });
+      liste.push({ id: uid(), titel: titel, modus: z.modus, datum: datum, modul_id: d.querySelector('#lpFach').value || null, erstellt: jetztISO(), geaendert: jetztISO(), geloescht: false });
       lpSpeichern(liste);
     } else {
-      const e = liste.filter(function (x) { return x.id === z.id; })[0]; if (!e) { d.close(); return; }
-      if (e.aufgabe_id && liste.some(function (x) { return x !== e && x.aufgabe_id === e.aufgabe_id && x.datum === datum; })) { fehler.textContent = 'An diesem Tag ist die Aufgabe schon eingeplant.'; return; }
-      e.datum = datum;                              // verschieben
+      const e = liste.filter(function (x) { return x.id === z.id && !x.geloescht; })[0]; if (!e) { d.close(); return; }
+      if (e.aufgabe_id && liste.some(function (x) { return x !== e && !x.geloescht && x.aufgabe_id === e.aufgabe_id && x.datum === datum; })) { fehler.textContent = 'An diesem Tag ist die Aufgabe schon eingeplant.'; return; }
+      e.datum = datum; e.geaendert = jetztISO();   // verschieben
       if (!e.aufgabe_id) { e.titel = titel; e.modus = z.modus; e.modul_id = d.querySelector('#lpFach').value || null; }
       lpSpeichern(liste);
     }
@@ -3117,9 +3150,9 @@ function starteApp() {
   }
   /* ---------- Was ist neu (erscheint einmal nach jedem Update) ---------- */
   // Bei jedem Update: VERSION erhöhen (gleiche Nummer wie der Cache in sw.js) und NEUIGKEITEN anpassen.
-  const VERSION = 28;
+  const VERSION = 28.2;
   const NEUIGKEITEN = [
-    ['🗺️', 'Lernplaner', 'Neuer Tab „Lernplan“: Sieh als Mindmap, was diese Woche fällig ist, plane Aufgaben auf Arbeitstage ein und trag eigene Vorhaben ein.']
+    ['✨', 'KI-Korrekturstift', 'Neu in den Notizbüchern: Umkreise eine Rechnung, Frage oder einen Text und lass ihn von der KI prüfen. Außerdem gibt es beim Anlegen eines Notizbuchs jetzt einen Knopf „Ordner auswählen“.']
   ];
   function neuDlgStil() {                       // gemeinsamer Stil für kleine Hinweis-Fenster (Neuigkeiten, Tour-Einladung)
     if (document.getElementById('neuDlgStil')) return;
